@@ -1,0 +1,5 @@
+---
+import Base from './Base.astro';import {html} from '../lib/content.mjs';const {lesson,preview=false}=Astro.props;
+---
+<Base title={lesson.title}><p class="breadcrumb"><a href="/ja/">ホーム</a> / <a href="/ja/lessons/">教材</a> / {lesson.id}</p>{preview&&<p class="notice">下書きプレビューです。公開教材ではありません。操作・コードの動作は未検証です。</p>}<div class="tools">{!preview&&<a href={`/ja/lessons/${lesson.id}.md`}>Markdownを開く</a>}<button id="copy-body" data-url={preview?`/ja/preview/${lesson.id}.md`:`/ja/lessons/${lesson.id}.md`}>本文をコピー</button><span id="copy-status" role="status"></span></div><article class="prose" set:html={html(lesson)}/></Base>
+<script>document.getElementById('copy-body')?.addEventListener('click',async(e)=>{const b=e.currentTarget as HTMLButtonElement;const status=document.getElementById('copy-status')!;try{const r=await fetch(b.dataset.url!);if(!r.ok)throw Error();await navigator.clipboard.writeText(await r.text());status.textContent='コピーしました';}catch{status.textContent='コピーできませんでした。Markdownを開いて選択・コピーしてください。';}});</script>

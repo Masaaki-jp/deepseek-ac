@@ -1,0 +1,4 @@
+---
+import Base from '../../../layouts/Base.astro';import {lessons} from '../../../lib/content.mjs';const list=lessons();
+---
+<Base title="教材一覧"><div class="page-heading"><p class="eyebrow">LESSONS</p><h1>教材一覧</h1><p>操作からPythonによる実装、安全な管理へ。</p></div>{list.length?<div class="cards">{list.map(l=><article class="card"><span>{l.id} · 約{l.minutes}分</span><h2><a href={`/ja/lessons/${l.id}/`}>{l.title}</a></h2><p>{l.summary}</p></article>)}</div>:<p class="empty">教材は準備中です。確認を終えた教材から、ここに掲載します。</p>}<p><a href="/ja/start/">学ぶ順番と必要な環境を確認する →</a></p></Base>

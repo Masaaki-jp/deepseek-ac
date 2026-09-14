@@ -1,0 +1,6 @@
+---
+import '../styles/global.css';
+const {title='DeepSeekを、日本語で学ぶ。',description='DeepSeekを、日本語で学び、動かし、安全に使う。伊藤正章による独立した教育サイト。',draft=false}=Astro.props;
+const links=[['はじめての方へ','/ja/start/'],['教材','/ja/lessons/'],['参考書・問題集','/ja/books/'],['運営者','/ja/about/']];
+---
+<!doctype html><html lang="ja"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width"/><title>{title} | deepseek.ac</title><meta name="description" content={description}/><meta name="robots" content="noindex,nofollow"/><link rel="icon" href="/favicon.svg"/></head><body><a class="skip" href="#main">本文へ移動</a><header><div class="header-inner"><a class="brand" href="/ja/">deepseek<span>.ac</span><small>日本語で学ぶ、実践する</small></a><nav aria-label="メインナビゲーション">{links.map(([label,url])=><a href={url} aria-current={Astro.url.pathname===url?'page':undefined}>{label}</a>)}</nav></div></header><main id="main"><slot/></main><footer><div><a class="brand" href="/ja/">deepseek.ac</a><p>DeepSeekの操作・実装・安全運用を学ぶ、日本語の教育サイト。<br/>運営：伊藤正章。本サイトは独立した教育サイトであり、DeepSeek公式とは関係ありません。</p></div><nav aria-label="フッターナビゲーション"><a href="/ja/case-study/">制作事例</a><a href="/ja/policy/">利用条件・プライバシー</a><a href="/ja/about/">問い合わせ</a></nav><p class="fine">© 2026 伊藤正章 · 公開準備中のローカルプレビュー</p></footer></body></html>
