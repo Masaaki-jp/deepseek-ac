@@ -1,3 +1,5 @@
+> 2026-09-15更新: ブラウザだけで更新する要件に合わせ、Web用CMSはDecap CMSへ変更しました。現在は接続前です。最新手順は [CMS運用手順](docs/cms-operation.md) を参照してください。以下のローカルKeystaticの説明は開発PC用です。
+
 # deepseek.ac 初期実装
 
 公開準備中。教材3本は下書きで、API実行・書籍対応・Cloudflare接続は未検証です。

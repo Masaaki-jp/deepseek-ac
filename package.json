@@ -6,13 +6,14 @@
     "dev": "astro dev --host 127.0.0.1",
     "build": "astro build && node scripts/check.mjs",
     "preview": "astro preview --host 127.0.0.1",
-    "test": "node --test scripts/content.test.mjs"
+    "test": "node --test scripts/content.test.mjs scripts/auth.test.mjs"
   },
   "dependencies": {
     "@astrojs/react": "^4.3.0",
     "@keystatic/astro": "^5.0.0",
     "@keystatic/core": "^0.5.0",
     "astro": "^5.13.0",
+    "decap-cms-app": "3.16.2",
     "gray-matter": "^4.0.3",
     "lodash": "^4.18.1",
     "marked": "^15.0.0",

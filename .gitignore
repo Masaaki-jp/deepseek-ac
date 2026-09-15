@@ -7,3 +7,5 @@ dist/
 
 __pycache__/
 *.pyc
+public/admin/vendor/
+.dev.vars
