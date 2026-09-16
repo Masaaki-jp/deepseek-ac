@@ -1,3 +1,5 @@
+> 2026-09-15 接続状況: 非公開リポジトリ https://github.com/Masaaki-jp/deepseek-ac にmainを登録済み。GitHub Actions実行34949492669成功。Cloudflare Pages deepseek-acを作成、初回デプロイ成功（80242afd-bc5c-4f65-ad0c-2132b711d2a7）。https://deepseek-ac.pages.dev/ja/ の表示確認済み。mainの自動配信有効、Preview branch=Noneを保存・再確認。独自ドメイン、CMSのGitHub App認証は未接続。
+
 > 2026-09-15更新: ブラウザだけで更新する要件に合わせ、Web用CMSはDecap CMSへ変更しました。現在は接続前です。最新手順は [CMS運用手順](cms-operation.md) を参照してください。以下のローカルKeystaticの説明は開発PC用です。
 
 # GitHub・Cloudflare接続案（確認待ち）
