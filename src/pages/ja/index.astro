@@ -3,4 +3,66 @@ import Base from '../../layouts/Base.astro';
 import {lessons} from '../../lib/content.mjs';
 const published=lessons();
 ---
-<Base><section class="hero"><div><p class="eyebrow">DEEPSEEK / PRACTICAL LEARNING</p><h1>DeepSeekを、<br/>日本語で学び、<br/>動かし、安全に使う。</h1><p class="lead">参考書で学んだ知識を、操作と実装で確かめる。<br/>読むところから、実際に使うところまで。<br/>あなたのペースで進める実践学習サイトです。</p><a class="button" href="/ja/start/">はじめての方へ →</a><a class="button secondary" href="/ja/books/">参考書・問題集を見る</a></div><aside class="path"><p class="eyebrow">LEARNING PATH</p><h2>知る。試す。実装する。</h2><ol><li>使い方を知る<small>チャットとAPIの違いを理解する</small></li><li>操作して確かめる<small>架空の文章で結果を比べる</small></li><li>Pythonで実装する<small>APIキーの管理から学ぶ</small></li></ol></aside></section><div class="notice">公開準備中です。教材は内容と操作の確認を終えたものから順次公開します。</div><section class="section"><div class="section-head"><h2>公開中の教材</h2><a href="/ja/lessons/">教材一覧を見る →</a></div>{published.length?<div class="cards">{published.map(l=><article class="card"><span class="number">{l.id}</span><h3><a href={`/ja/lessons/${l.id}/`}>{l.title}</a></h3><p>{l.summary}</p></article>)}</div>:<div class="empty">公開中の教材はまだありません。<br/>最初の3本として、利用方法・文章を使った操作・PythonによるAPI実行を準備しています。</div>}</section><section class="section"><div class="section-head"><h2>書籍と実践を、つなぐ。</h2></div><div class="split"><article class="book-panel"><p class="eyebrow">01 / UNDERSTAND</p><h3>参考書で、体系的に学ぶ</h3><p>知識と判断の観点を学び、サイトの操作手順で確かめます。</p><a href="/ja/books/">参考書・補足の案内 →</a></article><article class="book-panel"><p class="eyebrow">02 / THINK</p><h3>問題集で、判断を練習する</h3><p>ケースに応じた判断を練習し、教材で実践につなげます。</p><a href="/ja/books/">問題集・補足の案内 →</a></article></div></section></Base>
+<Base>
+  <section class="hero">
+    <div>
+      <p class="eyebrow">DEEPSEEK / PRACTICAL LEARNING</p>
+      <h1>DeepSeekを、<br/>日本語で学び、<br/>動かし、安全に使う。</h1>
+      <p class="lead">参考書で学んだ知識を、操作と実装で確かめる。<br/>読むところから、実際に使うところまで。<br/>あなたのペースで進める実践学習サイトです。</p>
+      <a class="button" href="/ja/start/">はじめての方へ →</a>
+      <a class="button secondary" href="/ja/books/">参考書・問題集を見る</a>
+    </div>
+    <aside class="path">
+      <p class="eyebrow">LEARNING PATH</p>
+      <h2>安全に使い、深め、実装し、理解する。</h2>
+      <ol>
+        <li>安全に使う<small>リスクと管理を体系的に学ぶ</small></li>
+        <li>対話を深める<small>ブラウザで問いを磨く</small></li>
+        <li>APIで実装する<small>Pythonで組み込む</small></li>
+        <li>仕組みを理解する<small>モデルの限界と研究最前線</small></li>
+      </ol>
+    </aside>
+  </section>
+
+  <div class="notice">公開準備中です。教材は内容と操作の確認を終えたものから順次公開します。</div>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>公開中の教材</h2>
+      <a href="/ja/lessons/">教材一覧を見る →</a>
+    </div>
+    {published.length ? (
+      <div class="cards">
+        {published.map(l => (
+          <article class="card">
+            <span class="number">{l.id}</span>
+            <h3><a href={`/ja/lessons/${l.id}/`}>{l.title}</a></h3>
+            <p>{l.summary}</p>
+          </article>
+        ))}
+      </div>
+    ) : (
+      <div class="empty">公開中の教材はまだありません。<br/>最初の3本として、利用方法・文章を使った操作・PythonによるAPI実行を準備しています。</div>
+    )}
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>書籍と実践を、つなぐ。</h2>
+    </div>
+    <div class="split">
+      <article class="book-panel">
+        <p class="eyebrow">BOOK 1 / 横断トラック</p>
+        <h3>安全運用の手引き</h3>
+        <p>リスクと管理を体系的に学ぶ。全ステップで参照する横断的な一冊です。</p>
+        <a href="/ja/books/">参考書・問題集の案内 →</a>
+      </article>
+      <article class="book-panel">
+        <p class="eyebrow">BOOK 2〜4 / 準備中</p>
+        <h3>対話・実装・仕組みへ</h3>
+        <p>ブラウザ対話、API連携、モデルの仕組みへと続きます。</p>
+        <a href="/ja/books/">書籍シリーズの案内 →</a>
+      </article>
+    </div>
+  </section>
+</Base>
