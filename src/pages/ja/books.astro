@@ -32,13 +32,17 @@ import Base from '../../layouts/Base.astro';
 
 <style>
 .book-cover {
-  max-width: 240px;
-  width: 100%;
-  height: auto;
+  width: 240px;
+  height: 320px;
+  object-fit: contain;
   display: block;
   margin: 0 auto 1.5rem;
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.book-panel {
+  text-align: center;
 }
 
 .book-panel {
