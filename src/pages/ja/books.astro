@@ -1,29 +1,79 @@
-<div class="split">
+---
+import Base from '../../layouts/Base.astro';
+---
+<Base title="参考書・問題集">
+  <div class="page-heading">
+    <p class="eyebrow">BOOKS</p>
+    <h1>参考書・問題集</h1>
+  </div>
+  <div class="prose">
+    <p>書籍で学んだ知識や判断を、サイトの実践教材で確かめます。</p>
+    <div class="split">
 
-  <section class="book-panel">
-    <img src="/images/book-handbook-cover.jpg" alt="DeepSeek安全運用の手引き 表紙" class="book-cover">
-    <p class="eyebrow">REFERENCE</p>
-    <h2>DeepSeek安全運用の<br>手引き</h2>
-    <p>「安さ」の裏側を正しく見る</p>
-    <p>知識と判断の観点を体系的に学ぶための一冊。</p>
-    <a class="button" href="https://www.amazon.co.jp/dp/B0HJKL5LFB">参考書をAmazonで見る →</a>
-  </section>
+      <section class="book-panel">
+        <img src="/images/book-handbook-cover.jpg" alt="DeepSeek安全運用の手引き 表紙" class="book-cover" />
+        <p class="eyebrow">REFERENCE</p>
+        <h2>DeepSeek安全運用の<br>手引き</h2>
+        <p>「安さ」の裏側を正しく見る</p>
+        <p>知識と判断の観点を体系的に学ぶための一冊。</p>
+        <a class="button" href="https://www.amazon.co.jp/dp/B0HJKL5LFB">参考書をAmazonで見る →</a>
+      </section>
 
-  <section class="book-panel">
-    <img src="/images/book-workbook-cover.jpg" alt="DeepSeek安全運用の手引き 問題集 全70問 表紙" class="book-cover">
-    <p class="eyebrow">WORKBOOK</p>
-    <h2>DeepSeek安全運用の手引き<br>問題集 全70問</h2>
-    <p>ケースに応じた判断を練習するための一冊。</p>
-    <a class="button" href="https://www.amazon.co.jp/dp/B0HJN35DR9">問題集をAmazonで見る →</a>
-  </section>
+      <section class="book-panel">
+        <img src="/images/book-workbook-cover.jpg" alt="DeepSeek安全運用の手引き 問題集 全70問 表紙" class="book-cover" />
+        <p class="eyebrow">WORKBOOK</p>
+        <h2>DeepSeek安全運用の手引き<br>問題集 全70問</h2>
+        <p>ケースに応じた判断を練習するための一冊。</p>
+        <a class="button" href="https://www.amazon.co.jp/dp/B0HJN35DR9">問題集をAmazonで見る →</a>
+      </section>
 
-  <section class="book-panel">
-    <img src="/images/book-dialogue-design-cover.jpg" alt="DeepSeek 対話の設計 表紙" class="book-cover">
-    <p class="eyebrow">PRACTICE</p>
-    <h2>DeepSeek<br>対話の設計</h2>
-    <p>ブラウザで試す、考える、深める</p>
-    <p>問いを立て、回答を確かめ、自分の判断にまとめるための一冊。</p>
-    <a class="button" href="https://www.amazon.co.jp/dp/B0HKQ3MN2G/">対話の設計をAmazonで見る →</a>
-  </section>
+      <section class="book-panel">
+        <img src="/images/book-dialogue-design-cover.jpg" alt="DeepSeek 対話の設計 表紙" class="book-cover" />
+        <p class="eyebrow">PRACTICE</p>
+        <h2>DeepSeek<br>対話の設計</h2>
+        <p>ブラウザで試す、考える、深める</p>
+        <p>問いを立て、回答を確かめ、自分の判断にまとめるための一冊。</p>
+        <a class="button" href="https://www.amazon.co.jp/dp/B0HKQ3MN2G/">対話の設計をAmazonで見る →</a>
+      </section>
 
-</div>
+    </div>
+    <h2>正誤表・補足・更新情報</h2>
+    <p>書籍との対応を確認したうえで掲載します。現在は情報の準備中です。</p>
+  </div>
+</Base>
+
+<style>
+.split {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.book-cover {
+  width: 240px;
+  height: 320px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto 1.5rem;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.book-panel {
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .split {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
