@@ -47,50 +47,50 @@ import Base from '../../layouts/Base.astro';
 
 <style>
   .split {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 2rem;
-    max-width: 900px;
-    margin: 0 auto;
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 2rem !important;
+    max-width: 900px !important;
+    margin: 0 auto !important;
   }
 
   .book-cover {
-    width: 240px;
-    height: 360px;
-    object-fit: cover;
-    display: block;
-    margin: 0 auto 1.5rem;
-    border-radius: 4px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    width: 240px !important;
+    height: 360px !important;
+    object-fit: cover !important;
+    display: block !important;
+    margin: 0 auto 1.5rem !important;
+    border-radius: 4px !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
   }
 
   .book-panel {
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    text-align: center !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
   }
 
   .book-panel h2 {
-    font-size: 1.15rem;
-    line-height: 1.4;
-    word-break: keep-all;
+    font-size: 1.15rem !important;
+    line-height: 1.4 !important;
+    word-break: keep-all !important;
   }
 
   .book-panel .button {
-    margin-top: auto;
-    white-space: nowrap;
+    margin-top: auto !important;
+    white-space: nowrap !important;
   }
 
   @media (max-width: 900px) {
     .split {
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(2, 1fr) !important;
     }
   }
 
   @media (max-width: 600px) {
     .split {
-      grid-template-columns: 1fr;
+      grid-template-columns: 1fr !important;
     }
   }
 </style>
