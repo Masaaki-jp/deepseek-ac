@@ -14,7 +14,7 @@ import Base from '../../layouts/Base.astro';
 
       <section class="book-panel">
         <p class="eyebrow">REFERENCE</p>
-        <h2>DeepSeek安全運用の<br />手引き</h2>
+        <h2>DeepSeek安全運用の手引き</h2>
         <p>「安さ」の裏側を正しく見る</p>
         <p>知識と判断の観点を体系的に学ぶための一冊。</p>
         <a class="button" href="https://www.amazon.co.jp/dp/B0HJKL5LFB">Amazonで見る →</a>
@@ -22,14 +22,15 @@ import Base from '../../layouts/Base.astro';
 
       <section class="book-panel">
         <p class="eyebrow">WORKBOOK</p>
-        <h2>DeepSeek安全運用の手引き<br />問題集 全70問</h2>
+        <h2>DeepSeek安全運用の手引き 問題集 全70問</h2>
+        <p>ケースで身につく実践的判断力</p>
         <p>ケースに応じた判断を練習するための一冊。</p>
         <a class="button" href="https://www.amazon.co.jp/dp/B0HJN35DR9">Amazonで見る →</a>
       </section>
 
       <section class="book-panel">
         <p class="eyebrow">PRACTICE</p>
-        <h2>DeepSeek<br />対話の設計</h2>
+        <h2>DeepSeek対話の設計</h2>
         <p>ブラウザで試す、考える、深める</p>
         <p>問いを立て、回答を確かめ、自分の判断にまとめるための一冊。</p>
         <a class="button" href="https://www.amazon.co.jp/dp/B0HKQ3MN2G/">Amazonで見る →</a>
@@ -47,7 +48,7 @@ import Base from '../../layouts/Base.astro';
     display: grid !important;
     grid-template-columns: repeat(3, 1fr) !important;
     gap: 2rem !important;
-    max-width: 900px !important;
+    max-width: 1100px !important; /* 900px → 1100px に拡大 */
     margin: 0 auto !important;
     align-items: stretch !important; /* 各カードの高さを揃える */
   }
@@ -63,7 +64,7 @@ import Base from '../../layouts/Base.astro';
   .book-panel h2 {
     font-size: 1.15rem !important;
     line-height: 1.4 !important;
-    /* word-break: keep-all; は削除（日本語が不自然に改行されるため） */
+    /* word-break: keep-all; は削除済み */
     margin-bottom: 1rem !important;
   }
 
