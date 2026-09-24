@@ -13,6 +13,7 @@ import Base from '../../layouts/Base.astro';
     <div class="split">
 
       <section class="book-panel">
+        <img src="/images/book-handbook-cover.jpg" alt="DeepSeek安全運用の手引き 表紙" class="book-cover" />
         <p class="eyebrow">REFERENCE</p>
         <h2>DeepSeek安全運用の手引き</h2>
         <p>「安さ」の裏側を正しく見る</p>
@@ -21,6 +22,7 @@ import Base from '../../layouts/Base.astro';
       </section>
 
       <section class="book-panel">
+        <img src="/images/book-workbook-cover.jpg" alt="DeepSeek安全運用の手引き 問題集 全70問 表紙" class="book-cover" />
         <p class="eyebrow">WORKBOOK</p>
         <h2>DeepSeek安全運用の手引き<br />問題集 全70問</h2>
         <p>ケースで身につく実践的判断力</p>
@@ -29,8 +31,9 @@ import Base from '../../layouts/Base.astro';
       </section>
 
       <section class="book-panel">
+        <img src="/images/book-dialogue-design-cover.jpg" alt="DeepSeek 対話の設計 表紙" class="book-cover" />
         <p class="eyebrow">PRACTICE</p>
-        <h2>DeepSeek対話<br />の設計</h2>
+        <h2>DeepSeek対話の設計</h2>
         <p>ブラウザで試す、考える、深める</p>
         <p>問いを立て、回答を確かめ、自分の判断にまとめるための一冊。</p>
         <a class="button" href="https://www.amazon.co.jp/dp/B0HKQ3MN2G/">Amazonで見る →</a>
@@ -49,10 +52,10 @@ import Base from '../../layouts/Base.astro';
     grid-template-columns: repeat(3, 1fr) !important;
     gap: 2rem !important;
     max-width: 1100px !important;
-    width: 100% !important;            /* 親の幅を確実に取る */
-    margin: 0 auto !important;         /* 中央揃えを確実にする */
-    justify-content: center !important; /* グリッド自体を中央に */
-    align-items: stretch !important;   /* 各カードの高さを揃える */
+    width: 100% !important;
+    margin: 0 auto !important;
+    justify-content: center !important;
+    align-items: stretch !important;
   }
 
   .book-panel {
@@ -60,7 +63,19 @@ import Base from '../../layouts/Base.astro';
     display: flex !important;
     flex-direction: column !important;
     align-items: center !important;
-    height: 100% !important; /* グリッドの高さいっぱいに広げる */
+    height: 100% !important;
+  }
+
+  /* 画像のスタイルを追加 */
+  .book-cover {
+    width: 100% !important;
+    max-width: 220px !important; /* 列幅に合わせて調整 */
+    aspect-ratio: 2 / 3 !important; /* 本の表紙の比率を維持 */
+    object-fit: cover !important;
+    display: block !important;
+    margin: 0 auto 1.5rem !important; /* 下に余白を追加 */
+    border-radius: 4px !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
   }
 
   .book-panel h2 {
@@ -70,9 +85,9 @@ import Base from '../../layouts/Base.astro';
   }
 
   .book-panel .button {
-    margin-top: auto !important; /* カードの一番下に押し下げる */
+    margin-top: auto !important;
     white-space: nowrap !important;
-    padding-top: 1.5rem !important; /* テキストとの間に余白を追加 */
+    padding-top: 1.5rem !important;
   }
 
   @media (max-width: 900px) {
