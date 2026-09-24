@@ -48,9 +48,11 @@ import Base from '../../layouts/Base.astro';
     display: grid !important;
     grid-template-columns: repeat(3, 1fr) !important;
     gap: 2rem !important;
-    max-width: 1100px !important; /* 900px → 1100px に拡大 */
-    margin: 0 auto !important;
-    align-items: stretch !important; /* 各カードの高さを揃える */
+    max-width: 1100px !important;
+    width: 100% !important;            /* 親の幅を確実に取る */
+    margin: 0 auto !important;         /* 中央揃えを確実にする */
+    justify-content: center !important; /* グリッド自体を中央に */
+    align-items: stretch !important;   /* 各カードの高さを揃える */
   }
 
   .book-panel {
@@ -64,7 +66,6 @@ import Base from '../../layouts/Base.astro';
   .book-panel h2 {
     font-size: 1.15rem !important;
     line-height: 1.4 !important;
-    /* word-break: keep-all; は削除済み */
     margin-bottom: 1rem !important;
   }
 
