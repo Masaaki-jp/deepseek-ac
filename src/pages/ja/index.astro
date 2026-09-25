@@ -3,7 +3,11 @@ import Base from '../../layouts/Base.astro';
 import {lessons} from '../../lib/content.mjs';
 const published=lessons();
 ---
-<Base>
+<Base
+  title="DeepSeekを、日本語で学ぶ。"
+  description="参考書で学んだ知識を、操作と実装で確かめる。DeepSeekの使い方を知り、対話を深め、APIで実装し、仕組みを理解する実践学習サイト。"
+  ogImage="https://deepseek.ac/og/og-top.png"
+>
   <section class="hero">
     <div>
       <p class="eyebrow">DEEPSEEK / PRACTICAL LEARNING</p>
