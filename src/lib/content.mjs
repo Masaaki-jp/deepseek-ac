@@ -5,7 +5,7 @@ import {marked} from 'marked';
 import sanitize from 'sanitize-html';
 export const origin='https://deepseek.ac';
 export const fixed=['/ja/','/ja/start/','/ja/lessons/','/ja/books/','/ja/about/','/ja/case-study/','/ja/policy/'];
-export function lessons(includeDrafts=false){return fs.readdirSync('content/lessons').filter(f=>f.endsWith('.mdoc')).map(f=>{
+export function lessons(includeDrafts=false){return (fs.existsSync('content/lessons')?fs.readdirSync('content/lessons'):[]).filter(f=>f.endsWith('.mdoc')).map(f=>{
  const {data,content}=matter(fs.readFileSync(path.join('content/lessons',f),'utf8'));
  const id=f.replace(/\.mdoc$/,''); if(!/^ds-\d{3}$/.test(id)) throw Error(`Invalid ID: ${id}`);
  if(!data.title||!['draft','published'].includes(data.status))throw Error(`Invalid metadata: ${id}`);
