@@ -1,0 +1,36 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../../layouts/Base.astro';
+
+export async function getStaticPaths() {
+  const articles = await getCollection('articles', ({ data }) => !data.draft);
+  return articles.map((article) => ({
+    params: { slug: article.id },
+    props: { article },
+  }));
+}
+
+const { article } = Astro.props;
+const { Content } = await render(article);
+
+const categoryLabels: Record<string, string> = {
+  implementation: '実装',
+  model: 'モデル',
+  pattern: 'パターン',
+  operations: '運用',
+  legal: '法務',
+};
+---
+<Base title={article.data.title} description={article.data.description}>
+  <article class="prose">
+    <p class="eyebrow">{categoryLabels[article.data.category] ?? article.data.category}</p>
+    <h1>{article.data.title}</h1>
+    <p class="meta">
+      <time datetime={article.data.publishedAt.toISOString().slice(0, 10)}>
+        {article.data.publishedAt.toISOString().slice(0, 10)}
+      </time>
+      {article.data.minutes && <span> · 約{article.data.minutes}分</span>}
+    </p>
+    <Content />
+  </article>
+</Base>

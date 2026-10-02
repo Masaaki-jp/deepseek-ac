@@ -1,0 +1,45 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../../layouts/Base.astro';
+
+const articles = (await getCollection('articles', ({ data }) => !data.draft))
+  .sort((a, b) => b.data.publishedAt.getTime() - a.data.publishedAt.getTime());
+
+const categoryLabels: Record<string, string> = {
+  implementation: '実装',
+  model: 'モデル',
+  pattern: 'パターン',
+  operations: '運用',
+  legal: '法務',
+};
+---
+<Base
+  title="記事一覧"
+  description="DeepSeek API の実装、モデル解説、実装パターン、運用、法務に関する記事一覧。"
+>
+  <div class="page-heading">
+    <p class="eyebrow">ARTICLES</p>
+    <h1>記事一覧</h1>
+    <p>DeepSeek を業務で使うための実装・運用・法務の記事。</p>
+  </div>
+
+  {articles.length ? (
+    <div class="cards">
+      {articles.map((a) => (
+        <article class="card">
+          <p class="eyebrow">{categoryLabels[a.data.category] ?? a.data.category}</p>
+          <h2><a href={`/ja/articles/${a.id}/`}>{a.data.title}</a></h2>
+          <p>{a.data.description}</p>
+          <p class="meta">
+            <time datetime={a.data.publishedAt.toISOString().slice(0, 10)}>
+              {a.data.publishedAt.toISOString().slice(0, 10)}
+            </time>
+            {a.data.minutes && <span> · 約{a.data.minutes}分</span>}
+          </p>
+        </article>
+      ))}
+    </div>
+  ) : (
+    <p>公開中の記事はまだありません。</p>
+  )}
+</Base>
