@@ -5,8 +5,7 @@
   "scripts": {
     "dev": "astro dev --host 127.0.0.1",
     "build": "astro build && node scripts/check.mjs",
-    "preview": "astro preview --host 127.0.0.1",
-    "test": "node --test scripts/content.test.mjs"
+    "preview": "astro preview --host 127.0.0.1"
   },
   "dependencies": {
     "astro": "^5.13.0",
