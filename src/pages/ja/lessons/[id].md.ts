@@ -1,1 +1,0 @@
-import {lessons,markdown} from '../../../lib/content.mjs';export function getStaticPaths(){return lessons().map(lesson=>({params:{id:lesson.id},props:{lesson}}));}export function GET({props}){return new Response(markdown(props.lesson),{headers:{'Content-Type':'text/markdown; charset=utf-8'}});}

@@ -1,4 +1,0 @@
-import {config,collection,fields} from '@keystatic/core';
-export default config({storage:{kind:'local'},collections:{lessons:collection({label:'教材（保存だけでは公開されません）',slugField:'id',path:'content/lessons/*',format:{contentField:'body'},schema:{
-id:fields.slug({name:{label:'教材ID（ds-001など。公開後は変更しない）'}}),
-title:fields.text({label:'タイトル',validation:{isRequired:true}}),summary:fields.text({label:'概要',multiline:true}),status:fields.select({label:'公開状態',options:[{label:'下書き',value:'draft'},{label:'公開対象',value:'published'}],defaultValue:'draft'}),minutes:fields.integer({label:'所要時間（分）',defaultValue:15}),published:fields.date({label:'公開日'}),updated:fields.date({label:'更新日'}),verified:fields.date({label:'検証日（未検証なら空欄）'}),environment:fields.text({label:'検証環境'}),body:fields.markdoc({label:'本文（見出し・表・コード・注意事項を含む）'})}})}});

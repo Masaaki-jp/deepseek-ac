@@ -1,4 +1,0 @@
----
-import Lesson from '../../../layouts/Lesson.astro';import {lessons} from '../../../lib/content.mjs';export function getStaticPaths(){return lessons().map(lesson=>({params:{id:lesson.id},props:{lesson}}));}const {lesson}=Astro.props;
----
-<Lesson lesson={lesson}/>

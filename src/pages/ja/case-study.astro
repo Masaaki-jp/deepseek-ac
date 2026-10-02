@@ -1,4 +1,28 @@
 ---
 import Base from '../../layouts/Base.astro';
 ---
-<Base title="制作事例：deepseek.ac"><div class="page-heading"><p class="eyebrow">CASE STUDY</p><h1>制作事例：deepseek.ac</h1></div><div class="prose"><p>参考書の読者が操作と実装を学べること、少ない負担で教材を更新できることを目指した、小規模な教育サイトです。</p><h2>設計の判断</h2><ul><li>Astroの静的HTMLを配信し、本文の表示にJavaScriptやデータベースを必要としない構成にしました。</li><li>CMSの原稿をGitで管理できるファイルに保存し、同じ原稿からHTMLとMarkdownを生成します。</li><li>下書きは公開一覧・Markdown・サイトマップから除外します。</li><li>公開するAPIデモを置かず、閲覧によって運営者のAPI費用が発生しない構成です。</li></ul><h2>更新運用</h2><p>ローカルのKeystaticで編集し、下書きプレビューを確認します。公開対象への変更、ビルドとチェック、Git差分の確認を経て公開します。Cloudflareへの接続は準備段階です。</p><h2>検証状況</h2><p>ローカル実装の検証記録はリポジトリのdocs/verification.mdで管理します。DNS・HTTPS・Cloudflare反映・教材のAPI実行は未検証です。</p><h2>担当範囲とAI活用</h2><p>伊藤正章が目的・要件を定義しました。初期コード、文章の下書き、検証用スクリプトの作成にAIを利用しています。教材の事実確認、書籍との対応、再利用条件、公開可否は運営者による確認が必要です。</p></div></Base>
+<Base title="制作事例：deepseek.ac">
+  <div class="page-heading">
+    <p class="eyebrow">CASE STUDY</p>
+    <h1>制作事例：deepseek.ac</h1>
+  </div>
+  <div class="prose">
+    <p>参考書の読者が操作と実装を学べること、少ない負担でコンテンツを更新できることを目指した、小規模な教育サイトです。</p>
+
+    <h2>設計の判断</h2>
+    <ul>
+      <li>Astroの静的HTMLを配信し、本文の表示にJavaScriptやデータベースを必要としない構成にしました。</li>
+      <li>原稿はGitで管理できるMarkdownファイルとして保存し、Astroのcontent collectionsで読み込みます。</li>
+      <li>公開するAPIデモを置かず、閲覧によって運営者のAPI費用が発生しない構成です。</li>
+    </ul>
+
+    <h2>更新運用</h2>
+    <p>ローカルでMarkdownを編集し、ビルドとチェックを経て公開します。Cloudflare Pagesへの接続で自動デプロイを行います。</p>
+
+    <h2>検証状況</h2>
+    <p>ローカル実装の検証記録はリポジトリで管理します。DNS・HTTPS・Cloudflare反映・API実行は未検証です。</p>
+
+    <h2>担当範囲とAI活用</h2>
+    <p>伊藤正章が目的・要件を定義しました。初期コード、文章の下書き、検証用スクリプトの作成にAIを利用しています。事実確認、書籍との対応、公開可否は運営者による確認が必要です。</p>
+  </div>
+</Base>
