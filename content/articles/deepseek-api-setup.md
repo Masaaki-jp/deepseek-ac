@@ -9,7 +9,7 @@ tags:
   - JavaScript
   - 環境構築
 publishedAt: 2026-10-05
-draft: true
+draft: false
 series: "DeepSeek APIの実装"
 order: 1
 difficulty: beginner
