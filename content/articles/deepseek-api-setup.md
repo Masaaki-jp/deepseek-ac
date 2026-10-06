@@ -16,8 +16,6 @@ difficulty: beginner
 minutes: 10
 ---
 
-# DeepSeek APIの環境構築 — Python/JSで最初の1リクエストを送るまで
-
 ## リード
 
 DeepSeek APIをこれから触る人向けに、キー取得から最初のレスポンス受信までの最短ルートを示す。

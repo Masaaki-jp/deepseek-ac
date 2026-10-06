@@ -15,8 +15,6 @@ difficulty: beginner
 minutes: 8
 ---
 
-# レスポンスを読む（JSON構造の理解）—— APIの「返事」を分解する
-
 ## リード
 
 DeepSeek API のレスポンスは JSON です。`choices[0].message.content` だけ取り出して満足していませんか？ 実はレスポンスには、**課金に直結する `usage`**、**出力が途中で切れたことを示す `finish_reason`**、**thinking モード特有の `reasoning_content`** など、実務で効いてくる情報が詰まっています。この記事では、公式スキーマに基づいてレスポンスを「分解して読む」視点を身につけます。
