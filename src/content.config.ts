@@ -6,7 +6,15 @@ const articles = defineCollection({
   schema: z.object({
     title: z.string(),
     description: z.string(),
-    category: z.enum(['implementation', 'model', 'pattern', 'operations', 'legal']),
+    category: z.enum([
+      'implementation',
+      'model',
+      'pattern',
+      'operations',
+      'legal',
+      'security',
+      'troubleshooting',
+    ]),
     tags: z.array(z.string()).default([]),
     publishedAt: z.coerce.date(),
     updatedAt: z.coerce.date().optional(),
