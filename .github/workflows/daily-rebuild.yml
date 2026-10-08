@@ -1,0 +1,16 @@
+name: Daily Rebuild
+
+on:
+  schedule:
+    # 毎日 18:00 UTC = 日本時間 翌朝 03:00
+    - cron: '0 18 * * *'
+  workflow_dispatch:  # 手動実行も可能
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Cloudflare Pages Deploy
+        run: |
+          curl -X POST "${{ secrets.CLOUDFLARE_DEPLOY_HOOK }}"
+          echo "Deploy triggered at $(date)"
