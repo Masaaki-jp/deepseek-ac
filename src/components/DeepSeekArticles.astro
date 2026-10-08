@@ -1,43 +1,53 @@
 ---
 // src/components/DeepSeekArticles.astro
+import { getCollection } from 'astro:content';
 import Parser from 'rss-parser';
 
+// --- カテゴリの日本語ラベル ---
+const categoryLabels: Record<string, string> = {
+  implementation: '実装',
+  model: 'モデル',
+  pattern: 'パターン',
+  operations: '運用',
+  legal: '法務',
+  security: 'セキュリティ',
+  troubleshooting: 'トラブルシューティング',
+};
+
+// --- セクション1: deepseek.ac内の記事 ---
+const ownArticles = (await getCollection('articles', ({ data }) => !data.draft))
+  .sort((a, b) =>
+    b.data.publishedAt.getTime() - a.data.publishedAt.getTime()
+  )
+  .slice(0, 5);
+
+// --- セクション2: noteの記事（RSS） ---
 const parser = new Parser({
-  headers: { 'User-Agent': 'Mozilla/5.0 (DeepSeek Academy RSS Bot)' }
+  headers: { 'User-Agent': 'Mozilla/5.0 (DeepSeek Academy RSS Bot)' },
 });
 
-const magazines = [
-  { name: '『克制』──DeepSeek思想研究', url: 'https://note.com/masa_cloud/m/mfb160546d656' },
-  { name: 'DeepSeek攻略マガジン', url: 'https://note.com/masa_cloud/m/m20fedec94474' },
-  { name: 'DeepSeek 対話の設計', url: 'https://note.com/masa_cloud/m/m2e13073d42f0' },
-  { name: 'DeepSeek API実践マガジン', url: 'https://note.com/masa_cloud/m/m64bf1686bf92' },
-  { name: 'DeepSeek 安全運用の手引き', url: 'https://note.com/masa_cloud/m/m7c60ec8a0eb3' },
-];
-
+// DeepSeek関連のみを抽出するキーワード
 const keywords = [
-  'DeepSeek', 'deepseek', '克制', '梁文鋒',
-  'セルフホスト', 'データ主権', '越境', '検閲',
-  'タイムズカー', '競売', 'AI加工', '法的リスク',
-  'API', '安全性', 'アライメント', 'ポテト農家',
+  'DeepSeek', 'deepseek',
+  '克制', '梁文鋒',
+  '対話の設計',
+  '安全運用の手引き',
+  'API実践',
 ];
 
-let articles = [];
-
+let noteArticles: Array<{ title: string; url: string; date: string; summary: string }> = [];
 try {
   const feed = await parser.parseURL('https://note.com/masa_cloud/rss');
-
-  articles = feed.items
-    .filter(item => {
+  noteArticles = feed.items
+    .filter((item) => {
       const text = `${item.title || ''} ${item.contentSnippet || ''}`;
-      return keywords.some(kw => text.includes(kw));
+      return keywords.some((kw) => text.includes(kw));
     })
-    .sort((a, b) => {
-      const dateA = new Date(a.pubDate || 0).getTime();
-      const dateB = new Date(b.pubDate || 0).getTime();
-      return dateB - dateA;
-    })
-    .slice(0, 5)
-    .map(item => ({
+    .sort((a, b) =>
+      new Date(b.pubDate || 0).getTime() - new Date(a.pubDate || 0).getTime()
+    )
+    .slice(0, 3)
+    .map((item) => ({
       title: item.title || '無題',
       url: item.link || '#',
       date: item.pubDate
@@ -48,17 +58,65 @@ try {
 } catch (e) {
   console.error('RSS取得失敗:', e);
 }
+
+// --- セクション3: マガジン ---
+const magazines = [
+  { name: '『克制』──DeepSeek思想研究', url: 'https://note.com/masa_cloud/m/mfb160546d656' },
+  { name: 'DeepSeek攻略マガジン', url: 'https://note.com/masa_cloud/m/m20fedec94474' },
+  { name: 'DeepSeek 対話の設計', url: 'https://note.com/masa_cloud/m/m2e13073d42f0' },
+  { name: 'DeepSeek API実践マガジン', url: 'https://note.com/masa_cloud/m/m64bf1686bf92' },
+  { name: 'DeepSeek 安全運用の手引き', url: 'https://note.com/masa_cloud/m/m7c60ec8a0eb3' },
+];
+
+function formatDate(date: Date) {
+  return date.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
+}
 ---
 
-<section class="deepseek-articles">
+<!-- セクション1: deepseek.ac内の記事 -->
+<section class="articles-section own-articles">
   <div class="section-head">
-    <p class="eyebrow">LATEST FROM NOTE</p>
-    <h2>DeepSeek関連の最新記事</h2>
+    <p class="eyebrow">LATEST FROM DEEPSEEK.AC</p>
+    <h2>思想から実装まで</h2>
+    <p class="section-lead">このサイトで公開している実践教材です。API実装、セキュリティ、運用の手順を扱います。</p>
   </div>
 
-  {articles.length > 0 ? (
+  {ownArticles.length > 0 ? (
     <ul class="article-list">
-      {articles.map(article => (
+      {ownArticles.map((article) => (
+        <li>
+          <a href={`/ja/articles/${article.id}/`}>
+            <div class="article-meta">
+              <span class="article-date">{formatDate(article.data.publishedAt)}</span>
+              <span class="article-category">
+                {categoryLabels[article.data.category] ?? article.data.category}
+              </span>
+              {article.data.minutes && (
+                <span class="article-minutes">約{article.data.minutes}分</span>
+              )}
+            </div>
+            <h3 class="article-title">{article.data.title}</h3>
+            <p class="article-summary">{article.data.description}</p>
+          </a>
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <p class="fallback">記事を準備中です。</p>
+  )}
+</section>
+
+<!-- セクション2: noteの記事 -->
+<section class="articles-section note-articles">
+  <div class="section-head">
+    <p class="eyebrow">LATEST FROM NOTE</p>
+    <h2>問いと議論</h2>
+    <p class="section-lead">DeepSeekの設計思想、対話設計、API実践に関する記事です。</p>
+  </div>
+
+  {noteArticles.length > 0 ? (
+    <ul class="article-list">
+      {noteArticles.map((article) => (
         <li>
           <a href={article.url} target="_blank" rel="noopener">
             <div class="article-meta">
@@ -71,26 +129,35 @@ try {
       ))}
     </ul>
   ) : (
-    <p class="fallback">記事を取得できませんでした。noteのマガジンを直接ご覧ください。</p>
+    <p class="fallback">記事を取得できませんでした。</p>
   )}
+</section>
 
-  <div class="magazine-links">
+<!-- セクション3: マガジン -->
+<section class="articles-section magazines">
+  <div class="section-head">
     <p class="eyebrow">MAGAZINES</p>
-    <div class="magazine-grid">
-      {magazines.map(m => (
-        <a href={m.url} target="_blank" rel="noopener" class="magazine-link">
-          {m.name} →
-        </a>
-      ))}
-    </div>
+    <h2>noteのマガジン</h2>
+  </div>
+  <div class="magazine-grid">
+    {magazines.map((m) => (
+      <a href={m.url} target="_blank" rel="noopener" class="magazine-link">
+        {m.name} →
+      </a>
+    ))}
   </div>
 </section>
 
 <style>
-  .deepseek-articles {
+  .articles-section {
     max-width: 1000px;
     margin: 0 auto;
     padding: 4rem 1.5rem;
+    border-top: 1px solid #eee;
+  }
+
+  .note-articles {
+    background: #fafafa;
   }
 
   .section-head {
@@ -107,7 +174,14 @@ try {
 
   .section-head h2 {
     font-size: 1.75rem;
+    margin: 0 0 0.5rem;
+  }
+
+  .section-lead {
+    font-size: 0.9rem;
+    color: #666;
     margin: 0;
+    line-height: 1.6;
   }
 
   .article-list {
@@ -115,16 +189,20 @@ try {
     padding: 0;
     margin: 0;
     display: grid;
-    gap: 1rem;
+    gap: 0;
   }
 
   .article-list li {
     border-bottom: 1px solid #eee;
   }
 
+  .article-list li:last-child {
+    border-bottom: none;
+  }
+
   .article-list a {
     display: block;
-    padding: 1rem 0;
+    padding: 1.25rem 0;
     text-decoration: none;
     color: inherit;
     transition: opacity 0.2s;
@@ -135,9 +213,20 @@ try {
   }
 
   .article-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
     font-size: 0.8rem;
     color: #888;
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .article-category {
+    padding: 0.15rem 0.5rem;
+    background: #f0f0f0;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    color: #555;
   }
 
   .article-title {
@@ -151,18 +240,13 @@ try {
     font-size: 0.9rem;
     color: #555;
     margin: 0;
-    line-height: 1.5;
-  }
-
-  .magazine-links {
-    margin-top: 3rem;
+    line-height: 1.6;
   }
 
   .magazine-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     gap: 0.75rem;
-    margin-top: 1rem;
   }
 
   .magazine-link {
@@ -173,6 +257,7 @@ try {
     text-decoration: none;
     color: inherit;
     transition: background 0.2s;
+    background: #fff;
   }
 
   .magazine-link:hover {
