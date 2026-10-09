@@ -7,7 +7,7 @@ tags:
   - API
   - セキュリティ
   - APIキー
-publishedAt: 2026-10-05
+publishedAt: 2026-10-09
 draft: false
 series: "セキュリティ"
 order: 1
