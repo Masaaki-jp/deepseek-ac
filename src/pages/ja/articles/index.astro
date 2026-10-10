@@ -2,17 +2,43 @@
 import { getCollection } from 'astro:content';
 import Base from '../../../layouts/Base.astro';
 
-const articles = (await getCollection('articles', ({ data }) => !data.draft))
-  .sort((a, b) => b.data.publishedAt.getTime() - a.data.publishedAt.getTime());
+// カテゴリの表示順
+const categoryOrder = [
+  'implementation',
+  'security',
+  'operations',
+  'model',
+  'pattern',
+  'legal',
+  'troubleshooting',
+] as const;
 
+// カテゴリの日本語ラベル
 const categoryLabels: Record<string, string> = {
   implementation: '実装',
+  security: 'セキュリティ',
+  operations: '運用',
   model: 'モデル',
   pattern: 'パターン',
-  operations: '運用',
   legal: '法務',
+  troubleshooting: 'トラブルシューティング',
 };
+
+// 記事を取得
+const allArticles = await getCollection('articles', ({ data }) => !data.draft);
+
+// カテゴリごとにグループ化（空カテゴリは除外）
+const grouped = categoryOrder
+  .map(category => ({
+    category,
+    label: categoryLabels[category] ?? category,
+    articles: allArticles
+      .filter(a => a.data.category === category)
+      .sort((a, b) => b.data.publishedAt.getTime() - a.data.publishedAt.getTime()),
+  }))
+  .filter(group => group.articles.length > 0);
 ---
+
 <Base
   title="記事一覧"
   description="DeepSeek API の実装、モデル解説、実装パターン、運用、法務に関する記事一覧。"
@@ -23,23 +49,116 @@ const categoryLabels: Record<string, string> = {
     <p>DeepSeek を業務で使うための実装・運用・法務の記事。</p>
   </div>
 
-  {articles.length ? (
-    <div class="cards">
-      {articles.map((a) => (
-        <article class="card">
-          <p class="eyebrow">{categoryLabels[a.data.category] ?? a.data.category}</p>
-          <h2><a href={`/ja/articles/${a.id}/`}>{a.data.title}</a></h2>
-          <p>{a.data.description}</p>
-          <p class="meta">
-            <time datetime={a.data.publishedAt.toISOString().slice(0, 10)}>
-              {a.data.publishedAt.toISOString().slice(0, 10)}
-            </time>
-            {a.data.minutes && <span> · 約{a.data.minutes}分</span>}
-          </p>
-        </article>
+  {grouped.length ? (
+    <div class="category-groups">
+      {grouped.map((group) => (
+        <section class="category-group">
+          <h2 class="category-title">
+            <span class="category-label">{group.label}</span>
+            <span class="category-count">{group.articles.length}</span>
+          </h2>
+          <div class="cards">
+            {group.articles.map((a) => (
+              <article class="card">
+                <h3><a href={`/ja/articles/${a.id}/`}>{a.data.title}</a></h3>
+                <p>{a.data.description}</p>
+                <p class="meta">
+                  <time datetime={a.data.publishedAt.toISOString().slice(0, 10)}>
+                    {a.data.publishedAt.toISOString().slice(0, 10)}
+                  </time>
+                  {a.data.minutes && <span> · 約{a.data.minutes}分</span>}
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
       ))}
     </div>
   ) : (
     <p>公開中の記事はまだありません。</p>
   )}
 </Base>
+
+<style>
+  .page-heading {
+    margin-bottom: 3rem;
+  }
+
+  .eyebrow {
+    font-size: 0.75rem;
+    letter-spacing: 0.15em;
+    color: #888;
+    text-transform: uppercase;
+    margin: 0 0 0.5rem;
+  }
+
+  .category-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 3rem;
+  }
+
+  .category-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .category-title {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    font-size: 1.25rem;
+    margin: 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #eee;
+  }
+
+  .category-label {
+    font-weight: 600;
+  }
+
+  .category-count {
+    font-size: 0.8rem;
+    color: #888;
+    font-weight: normal;
+  }
+
+  .cards {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .card {
+    padding: 1rem 0;
+  }
+
+  .card h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0 0 0.5rem;
+    line-height: 1.4;
+  }
+
+  .card h3 a {
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .card h3 a:hover {
+    opacity: 0.7;
+  }
+
+  .card p {
+    font-size: 0.9rem;
+    color: #555;
+    margin: 0 0 0.5rem;
+    line-height: 1.6;
+  }
+
+  .card .meta {
+    font-size: 0.8rem;
+    color: #888;
+    margin: 0;
+  }
+</style>
