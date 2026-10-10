@@ -3,6 +3,7 @@ import os
 import sys
 import json
 import re
+from datetime import date
 from pathlib import Path
 import requests
 
@@ -37,8 +38,17 @@ WRITABLE_EXTS = {".md"}
 
 def load_system_prompt() -> str:
     if PROMPT_FILE.exists():
-        return PROMPT_FILE.read_text(encoding="utf-8").strip()
-    return "You are a helpful assistant."
+        base = PROMPT_FILE.read_text(encoding="utf-8").strip()
+    else:
+        base = "You are a helpful assistant."
+
+    today = date.today().isoformat()
+    return (
+        base
+        + f"\n\n# 今日の日付\n今日は {today} です。"
+        + "記事の publishedAt には必ずこの日付を使ってください。"
+        + "日付を推測したり、過去や未来の日付を書いてはいけません。\n"
+    )
 
 
 def normalize_command(s: str) -> str:
