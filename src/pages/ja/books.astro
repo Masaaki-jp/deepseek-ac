@@ -3,7 +3,7 @@ import Base from '../../layouts/Base.astro';
 ---
 <Base
   title="参考書・問題集"
-  description="DeepSeek安全運用の手引きシリーズ。リスクと管理を体系的に学ぶ参考書、ケース判断を練習する問題集、対話の設計を学ぶ実践書の3冊。"
+  description="DeepSeekを安全に活用するための書籍4冊。リスクと管理を体系的に学ぶ参考書、ケース判断を練習する問題集、対話設計を学ぶ実践書、AI時代の賢い選択を考える一冊を紹介します。"
   ogImage="https://deepseek.ac/og/og-books.png"
 >
   <div class="page-heading">
@@ -11,13 +11,29 @@ import Base from '../../layouts/Base.astro';
     <h1>参考書・問題集</h1>
   </div>
 
-  <div class="prose">
+  <div class="prose books-content">
     <p>書籍で学んだ知識や判断を、サイトの実践教材で確かめます。</p>
 
     <div class="split">
+      <section class="book-panel">
+        <img
+          src="/images/books/restraint-cover.jpg"
+          alt="克制 DeepSeekは「やらないこと」を選ぶ 表紙"
+          class="book-cover"
+        />
+        <p class="eyebrow">STRATEGY</p>
+        <h2>克制</h2>
+        <p>DeepSeekは「やらないこと」を選ぶ</p>
+        <p>AI時代に必要な、賢い選択を考える一冊。</p>
+        <a class="button" href="https://www.amazon.co.jp/dp/B0HMP2QTDK">Amazonで見る →</a>
+      </section>
 
       <section class="book-panel">
-        <img src="/images/books/handbook-cover.jpg" alt="DeepSeek安全運用の手引き 表紙" class="book-cover" />
+        <img
+          src="/images/books/handbook-cover.jpg"
+          alt="DeepSeek安全運用の手引き 表紙"
+          class="book-cover"
+        />
         <p class="eyebrow">REFERENCE</p>
         <h2>DeepSeek安全運用の手引き</h2>
         <p>「安さ」の裏側を正しく見る</p>
@@ -26,7 +42,11 @@ import Base from '../../layouts/Base.astro';
       </section>
 
       <section class="book-panel">
-        <img src="/images/books/workbook-cover.jpg" alt="DeepSeek安全運用の手引き 問題集 全70問 表紙" class="book-cover" />
+        <img
+          src="/images/books/workbook-cover.jpg"
+          alt="DeepSeek安全運用の手引き 問題集 全70問 表紙"
+          class="book-cover"
+        />
         <p class="eyebrow">WORKBOOK</p>
         <h2>DeepSeek安全運用の手引き<br />問題集 全70問</h2>
         <p>ケースで身につく実践的判断力</p>
@@ -35,14 +55,17 @@ import Base from '../../layouts/Base.astro';
       </section>
 
       <section class="book-panel">
-        <img src="/images/books/dialogue-design-cover.jpg" alt="DeepSeek 対話の設計 表紙" class="book-cover" />
+        <img
+          src="/images/books/dialogue-design-cover.jpg"
+          alt="DeepSeek 対話の設計 表紙"
+          class="book-cover"
+        />
         <p class="eyebrow">PRACTICE</p>
         <h2>DeepSeek対話の設計</h2>
         <p>ブラウザで試す、考える、深める</p>
         <p>問いを立て、回答を確かめ、自分の判断にまとめるための一冊。</p>
         <a class="button" href="https://www.amazon.co.jp/dp/B0HKQ3MN2G/">Amazonで見る →</a>
       </section>
-
     </div>
 
     <h2>正誤表・補足・更新情報</h2>
@@ -51,31 +74,35 @@ import Base from '../../layouts/Base.astro';
 </Base>
 
 <style>
-  .split {
-    display: grid !important;
-    grid-template-columns: repeat(3, 1fr) !important;
-    gap: 2rem !important;
-    max-width: 1100px !important;
+  .prose.books-content {
     width: 100% !important;
-    margin: 0 auto !important;
-    justify-content: center !important;
+    max-width: 1360px !important;
+    margin-inline: auto !important;
+  }
+
+  .books-content .split {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 1.5rem !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin-inline: auto !important;
     align-items: stretch !important;
   }
 
   .book-panel {
-    text-align: center !important;
     display: flex !important;
     flex-direction: column !important;
     align-items: center !important;
     height: 100% !important;
+    text-align: center !important;
   }
 
   .book-cover {
+    display: block !important;
     width: 100% !important;
     max-width: 220px !important;
-    aspect-ratio: 2 / 3 !important;
-    object-fit: cover !important;
-    display: block !important;
+    height: auto !important;
     margin: 0 auto 1.5rem !important;
     border-radius: 4px !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
@@ -89,18 +116,18 @@ import Base from '../../layouts/Base.astro';
 
   .book-panel .button {
     margin-top: auto !important;
-    white-space: nowrap !important;
     padding-top: 1.5rem !important;
+    white-space: nowrap !important;
   }
 
-  @media (max-width: 900px) {
-    .split {
-      grid-template-columns: repeat(2, 1fr) !important;
+  @media (max-width: 1100px) {
+    .books-content .split {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     }
   }
 
   @media (max-width: 600px) {
-    .split {
+    .books-content .split {
       grid-template-columns: 1fr !important;
     }
   }
