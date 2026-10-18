@@ -1,17 +1,14 @@
 ---
-title: "DeepSeek-V4.1-Flash-1017 — 小幅アップデートで何が変わったか"
-description: "V4.1-Flash-1017はV4.1-Flashの純粋な改善版。ベンチマーク数値・推奨パラメータ・ライセンスを一次資料ベースで整理し、乗り換えるべきかを判断できるようにする。"
+title: DeepSeek V4.1-Flash-1017 の変更点とつまずきポイント
+description: V4.1-Flash-1017 のリリースに伴う変更点、つまずきポイント、チェックリストをまとめます。
 category: model
 tags:
-  - DeepSeek
-  - V4.1
-  - Flash
-  - モデル解説
-  - ベンチマーク
+  - V4.1-Flash
+  - アップデート
 publishedAt: 2026-10-18
-series: "モデル解説"
+draft: false
 difficulty: intermediate
-minutes: 8
+minutes: 5
 ---
 
 ## リード
