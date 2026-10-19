@@ -8,7 +8,8 @@ from pathlib import Path
 import requests
 
 API_URL = "https://api.deepseek.com/chat/completions"
-MODEL = "deepseek-chat"
+SEARCH_URL = "https://api.deepseek.com/v1/tools/search"
+MODEL = "deepseek-flash"  # 10/17以降の最新モデル
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PROMPT_FILE = Path(__file__).parent / "system_prompt.txt"
@@ -155,6 +156,31 @@ def is_writable(rel_path: str):
     return True, str(p)
 
 
+def search_web(query: str, api_key: str, count: int = 5):
+    """DeepSeek Search API でウェブ検索し、結果のリストを返す。失敗時は空リスト。"""
+    q = query.strip()
+    # Search API の query は 1〜128 文字。長すぎる場合は先頭のみ使う。
+    if len(q) > 100:
+        q = q[:100]
+    if not q:
+        return []
+    try:
+        r = requests.post(
+            SEARCH_URL,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            json={"query": q, "count": count, "need_content": False},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json().get("results", [])
+    except requests.exceptions.RequestException as e:
+        print(f"[search error] {e}", file=sys.stderr)
+        return []
+
+
 def main():
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
@@ -165,10 +191,11 @@ def main():
     messages = [{"role": "system", "content": system_prompt}]
     loaded_files = {}
     last_reply = ""
+    search_enabled = True
 
     print("DeepSeek チャット開始（終了: Ctrl+C または 'exit'）")
     print(f"プロジェクト: {PROJECT_ROOT}")
-    print("コマンド: /ls  /read <path>  /files  /drop <path>  /paste  /save <path>  /clear  /reload")
+    print("コマンド: /ls  /read <path>  /files  /drop <path>  /paste  /save <path>  /clear  /reload  /search")
 
     for rel in AUTO_LOAD_FILES:
         ok, content = read_file(rel)
@@ -206,6 +233,11 @@ def main():
             messages = [{"role": "system", "content": system_prompt}]
             loaded_files.clear()
             print("[system] 履歴とファイルをリセットしました\n")
+            continue
+
+        if user_input == "/search":
+            search_enabled = not search_enabled
+            print(f"[system] 検索を{'有効' if search_enabled else '無効'}にしました\n")
             continue
 
         if user_input == "/ls":
@@ -285,6 +317,21 @@ def main():
                 ref_parts.append(f"## {path}\n```\n{content}\n```\n")
             ref = "\n".join(ref_parts)
             api_messages.append({"role": "system", "content": ref})
+
+        # --- ウェブ検索を実行し、結果をシステムメッセージとして注入 ---
+        if search_enabled:
+            results = search_web(user_input, api_key)
+            if results:
+                print(f"[search] {len(results)} 件の検索結果を取得しました")
+                ctx_parts = ["# ウェブ検索結果（以下の情報を根拠に記事を書いてください）\n"]
+                for i, r in enumerate(results, 1):
+                    title = r.get("title", "")
+                    url = r.get("url", "")
+                    summary = (r.get("summary") or r.get("snippet") or "").strip()
+                    if len(summary) > 800:
+                        summary = summary[:800] + "…"
+                    ctx_parts.append(f"### {i}. {title}\nURL: {url}\n{summary}\n")
+                api_messages.append({"role": "system", "content": "\n".join(ctx_parts)})
 
         api_messages.append({"role": "user", "content": user_input})
 
