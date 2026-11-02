@@ -54,7 +54,7 @@ DEEPSEEK_API_KEY=sk-xxxxxxxxxxxx
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 ```
 
-```gitignore
+```text
 # .gitignore
 .env
 .env.*
