@@ -5,12 +5,14 @@
     ":dependencyDashboard",
     ":separateMajorReleases"
   ],
-  "regexManagers": [
+  "customManagers": [
     {
-      "fileMatch": ["^\\.github/workflows/.*\\.ya?ml$"],
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
       "matchStrings": [
         "node-version:\\s*['\"]?(?<currentValue>\\d+\\.\\d+\\.\\d+)['\"]?"
       ],
+      "depNameTemplate": "node",
       "datasourceTemplate": "node-version",
       "versioningTemplate": "semver"
     }
