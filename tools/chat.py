@@ -181,6 +181,37 @@ def search_web(query: str, api_key: str, count: int = 5):
         return []
 
 
+def print_usage_line(usage) -> None:
+    """usage を1行で表示する。usage が None なら警告。"""
+    if not usage:
+        print("  └─ usage が返りませんでした（stream_options を確認）\n")
+        return
+    hit  = usage.get("prompt_cache_hit_tokens", 0)
+    miss = usage.get("prompt_cache_miss_tokens", 0)
+    out  = usage.get("completion_tokens", 0)
+    total_in = hit + miss
+    rate = 100.0 * hit / total_in if total_in else 0.0
+    print(
+        f"  └─ hit {hit} / miss {miss} / out {out}"
+        f"  hit率 {rate:.1f}%  total {usage.get('total_tokens', 0)}\n"
+    )
+
+
+def build_api_messages(messages, loaded_files):
+    """prefix を安定させるため、[system] [参考資料] を先頭に固定し、
+    会話履歴（user/assistant）はその後に置く。"""
+    api_messages = [messages[0]]  # system プロンプト
+    if loaded_files:
+        ref_parts = ["# 参考資料（プロジェクト内のファイル）\n"]
+        for path, content in loaded_files.items():
+            ref_parts.append(f"## {path}\n```\n{content}\n```\n")
+        api_messages.append(
+            {"role": "system", "content": "\n".join(ref_parts)}
+        )
+    api_messages.extend(messages[1:])  # 会話履歴は後ろ
+    return api_messages
+
+
 def main():
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
@@ -310,13 +341,8 @@ def main():
             print(f"[save] {rel} に保存しました（{len(content)} 文字）\n")
             continue
 
-        api_messages = list(messages)
-        if loaded_files:
-            ref_parts = ["# 参考資料（プロジェクト内のファイル）\n"]
-            for path, content in loaded_files.items():
-                ref_parts.append(f"## {path}\n```\n{content}\n```\n")
-            ref = "\n".join(ref_parts)
-            api_messages.append({"role": "system", "content": ref})
+        # ── prefix を安定させた組み立て ──
+        api_messages = build_api_messages(messages, loaded_files)
 
         # --- ウェブ検索を実行し、結果をシステムメッセージとして注入 ---
         if search_enabled:
@@ -338,6 +364,7 @@ def main():
         print("deepseek> ", end="", flush=True)
 
         reply_parts = []
+        usage = None
         try:
             with requests.post(
                 API_URL,
@@ -349,6 +376,7 @@ def main():
                     "model": MODEL,
                     "messages": api_messages,
                     "stream": True,
+                    "stream_options": {"include_usage": True},
                 },
                 stream=True,
                 timeout=120,
@@ -367,7 +395,14 @@ def main():
                         chunk = json.loads(data_str)
                     except json.JSONDecodeError:
                         continue
-                    delta = chunk["choices"][0].get("delta", {})
+
+                    if chunk.get("usage"):
+                        usage = chunk["usage"]
+
+                    choices = chunk.get("choices") or []
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta", {})
                     content = delta.get("content")
                     if content:
                         print(content, end="", flush=True)
@@ -377,6 +412,8 @@ def main():
             continue
 
         print("\n")
+        print_usage_line(usage)
+
         full_reply = "".join(reply_parts)
         last_reply = full_reply
         messages.append({"role": "user", "content": user_input})
