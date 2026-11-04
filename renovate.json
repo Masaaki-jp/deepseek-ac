@@ -19,12 +19,8 @@
   ],
   "packageRules": [
     {
-      "matchUpdateTypes": ["patch", "pin"],
+      "matchUpdateTypes": ["patch", "minor", "major", "pin", "digest"],
       "automerge": true
-    },
-    {
-      "matchUpdateTypes": ["minor", "major"],
-      "automerge": false
     }
   ]
 }
