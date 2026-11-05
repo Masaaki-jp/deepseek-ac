@@ -3,9 +3,13 @@ import os
 import sys
 import json
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 import requests
+
+# 自作モジュール（tools/ 直下にあるので script の dir 経由で import 可能）
+sys.path.insert(0, str(Path(__file__).parent))
+import usage as U
 
 API_URL = "https://api.deepseek.com/chat/completions"
 SEARCH_URL = "https://api.deepseek.com/v1/tools/search"
@@ -181,22 +185,6 @@ def search_web(query: str, api_key: str, count: int = 5):
         return []
 
 
-def print_usage_line(usage) -> None:
-    """usage を1行で表示する。usage が None なら警告。"""
-    if not usage:
-        print("  └─ usage が返りませんでした（stream_options を確認）\n")
-        return
-    hit  = usage.get("prompt_cache_hit_tokens", 0)
-    miss = usage.get("prompt_cache_miss_tokens", 0)
-    out  = usage.get("completion_tokens", 0)
-    total_in = hit + miss
-    rate = 100.0 * hit / total_in if total_in else 0.0
-    print(
-        f"  └─ hit {hit} / miss {miss} / out {out}"
-        f"  hit率 {rate:.1f}%  total {usage.get('total_tokens', 0)}\n"
-    )
-
-
 def build_api_messages(messages, loaded_files):
     """prefix を安定させるため、[system] [参考資料] を先頭に固定し、
     会話履歴（user/assistant）はその後に置く。"""
@@ -212,6 +200,41 @@ def build_api_messages(messages, loaded_files):
     return api_messages
 
 
+def print_cost_summary(session_started: str, turn_count: int) -> None:
+    s = U.summarize_session(session_started)
+    t = U.summarize_today()
+    elapsed = (
+        datetime.now(timezone.utc)
+        - datetime.fromisoformat(session_started)
+    ).total_seconds()
+    print("[cost] session:")
+    print(f"  turns       {turn_count}")
+    print(f"  hit / miss  {s['hit']} / {s['miss']}  → hit率 {s['hit_rate']:.1f}%")
+    print(f"  out         {s['out']}")
+    print(f"  cost        ${s['cost_usd']:.6f}")
+    print(f"  elapsed     {elapsed/60:.1f} 分")
+    print("[cost] today:")
+    print(f"  calls       {t['calls']}")
+    print(f"  hit率       {t['hit_rate']:.1f}%")
+    print(f"  cost        ${t['cost_usd']:.6f}\n")
+
+
+def print_stats() -> None:
+    print("[stats] daily (last 7 days):")
+    rows = U.daily(7)
+    if not rows:
+        print("  （まだ記録がありません）")
+    for day, calls, cost, hr in rows:
+        print(f"  {day}  {calls:>4} calls  ${cost:>10.6f}  hit率 {hr or 0:>5.1f}%")
+    print("[stats] by model:")
+    for model, calls, cost, hr in U.by_model(7):
+        print(f"  {model:<20} {calls:>4} calls  ${cost:>10.6f}  hit率 {hr or 0:>5.1f}%")
+    print("[stats] peak split:")
+    for band, calls, cost in U.peak_split():
+        print(f"  {band:<10} {calls:>4} calls  ${cost:>10.6f}")
+    print()
+
+
 def main():
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
@@ -224,9 +247,14 @@ def main():
     last_reply = ""
     search_enabled = True
 
+    session_started = datetime.now(timezone.utc).isoformat()
+    turn_count = 0
+
     print("DeepSeek チャット開始（終了: Ctrl+C または 'exit'）")
     print(f"プロジェクト: {PROJECT_ROOT}")
-    print("コマンド: /ls  /read <path>  /files  /drop <path>  /paste  /save <path>  /clear  /reload  /search")
+    print(f"DB: {U.DB_PATH}")
+    print("コマンド: /ls  /read <path>  /files  /drop <path>  /paste  /save <path>"
+          "  /clear  /reload  /search  /cost  /stats")
 
     for rel in AUTO_LOAD_FILES:
         ok, content = read_file(rel)
@@ -269,6 +297,14 @@ def main():
         if user_input == "/search":
             search_enabled = not search_enabled
             print(f"[system] 検索を{'有効' if search_enabled else '無効'}にしました\n")
+            continue
+
+        if user_input == "/cost":
+            print_cost_summary(session_started, turn_count)
+            continue
+
+        if user_input == "/stats":
+            print_stats()
             continue
 
         if user_input == "/ls":
@@ -365,6 +401,7 @@ def main():
 
         reply_parts = []
         usage = None
+        req_id = None
         try:
             with requests.post(
                 API_URL,
@@ -396,6 +433,8 @@ def main():
                     except json.JSONDecodeError:
                         continue
 
+                    if chunk.get("id"):
+                        req_id = chunk["id"]
                     if chunk.get("usage"):
                         usage = chunk["usage"]
 
@@ -412,7 +451,26 @@ def main():
             continue
 
         print("\n")
-        print_usage_line(usage)
+
+        if usage:
+            try:
+                cost = U.compute_cost(MODEL, usage)
+                turn_count += 1
+                U.record(
+                    cost,
+                    request_id=req_id,
+                    metadata={
+                        "purpose": "chat",
+                        "turn": turn_count,
+                        "search": search_enabled,
+                        "files": list(loaded_files.keys()),
+                    },
+                )
+                print(f"  └─ {U.format_line(cost)}\n")
+            except ValueError as e:
+                print(f"  └─ [usage error] {e}\n")
+        else:
+            print("  └─ usage が返りませんでした（stream_options を確認）\n")
 
         full_reply = "".join(reply_parts)
         last_reply = full_reply
