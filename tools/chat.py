@@ -3,6 +3,7 @@ import os
 import sys
 import json
 import re
+import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 import requests
@@ -39,6 +40,13 @@ AUTO_LOAD_FILES = [
 
 WRITABLE_DIRS = ["content/articles"]
 WRITABLE_EXTS = {".md"}
+
+# 検索の設定（記事執筆用途では常時ONを前提に、タイムアウトとキャッシュで運用を安定させる）
+SEARCH_TIMEOUT_S = 8.0
+SEARCH_CACHE_MAX = 32
+
+# セッション内検索キャッシュ（同一クエリの連投を吸収）
+_search_cache: dict[tuple, list] = {}
 
 
 def load_system_prompt() -> str:
@@ -160,10 +168,17 @@ def is_writable(rel_path: str):
     return True, str(p)
 
 
+def _make_cache_key(query: str, count: int) -> tuple:
+    """Search API の query は 1〜128 文字。キャッシュキーも同じ切り詰めで揃える。"""
+    q = query.strip()
+    if len(q) > 100:
+        q = q[:100]
+    return (q, count)
+
+
 def search_web(query: str, api_key: str, count: int = 5):
     """DeepSeek Search API でウェブ検索し、結果のリストを返す。失敗時は空リスト。"""
     q = query.strip()
-    # Search API の query は 1〜128 文字。長すぎる場合は先頭のみ使う。
     if len(q) > 100:
         q = q[:100]
     if not q:
@@ -176,13 +191,27 @@ def search_web(query: str, api_key: str, count: int = 5):
                 "Authorization": f"Bearer {api_key}",
             },
             json={"query": q, "count": count, "need_content": False},
-            timeout=30,
+            timeout=SEARCH_TIMEOUT_S,
         )
         r.raise_for_status()
         return r.json().get("results", [])
     except requests.exceptions.RequestException as e:
         print(f"[search error] {e}", file=sys.stderr)
         return []
+
+
+def search_with_cache(query: str, api_key: str, count: int = 5):
+    """セッション内キャッシュ経由で検索。(results, cached) を返す。"""
+    key = _make_cache_key(query, count)
+    if key in _search_cache:
+        return _search_cache[key], True
+    res = search_web(query, api_key, count)
+    _search_cache[key] = res
+    # 素朴な上限（LRUではなくFIFOで十分）
+    if len(_search_cache) > SEARCH_CACHE_MAX:
+        oldest = next(iter(_search_cache))
+        del _search_cache[oldest]
+    return res, False
 
 
 def build_api_messages(messages, loaded_files):
@@ -219,6 +248,23 @@ def print_cost_summary(session_started: str, turn_count: int) -> None:
     print(f"  cost        ${t['cost_usd']:.6f}\n")
 
 
+def print_latency_summary(session_started: str) -> None:
+    s = U.latency_summary(session_started)
+    if s.get("n", 0) == 0:
+        print("[latency] まだ計測データがありません\n")
+        return
+
+    def fmt(v):
+        return f"{v:.0f}ms" if isinstance(v, (int, float)) else "—"
+
+    print(f"[latency] session (n={s['n']})")
+    for key in ("ttft_ms", "tpot_ms", "e2e_ms", "search_ms"):
+        p50 = s.get(f"{key}_p50")
+        p95 = s.get(f"{key}_p95")
+        print(f"  {key:<10} p50 {fmt(p50):>8}  p95 {fmt(p95):>8}")
+    print()
+
+
 def print_stats() -> None:
     print("[stats] daily (last 7 days):")
     rows = U.daily(7)
@@ -226,6 +272,19 @@ def print_stats() -> None:
         print("  （まだ記録がありません）")
     for day, calls, cost, hr in rows:
         print(f"  {day}  {calls:>4} calls  ${cost:>10.6f}  hit率 {hr or 0:>5.1f}%")
+
+    print("[stats] latency daily (TTFT p50/p95, search p50):")
+    lat_rows = U.latency_daily(7)
+    if not lat_rows:
+        print("  （まだレイテンシ記録がありません）")
+    for day, ttft50, ttft95, search50 in lat_rows:
+        def fmt(v):
+            return f"{v:.0f}ms" if isinstance(v, (int, float)) else "—"
+        print(
+            f"  {day}  ttft p50 {fmt(ttft50):>8} / p95 {fmt(ttft95):>8}"
+            f"  search p50 {fmt(search50):>8}"
+        )
+
     print("[stats] by model:")
     for model, calls, cost, hr in U.by_model(7):
         print(f"  {model:<20} {calls:>4} calls  ${cost:>10.6f}  hit率 {hr or 0:>5.1f}%")
@@ -254,7 +313,7 @@ def main():
     print(f"プロジェクト: {PROJECT_ROOT}")
     print(f"DB: {U.DB_PATH}")
     print("コマンド: /ls  /read <path>  /files  /drop <path>  /paste  /save <path>"
-          "  /clear  /reload  /search  /cost  /stats")
+          "  /clear  /reload  /search  /cost  /latency  /stats")
 
     for rel in AUTO_LOAD_FILES:
         ok, content = read_file(rel)
@@ -301,6 +360,10 @@ def main():
 
         if user_input == "/cost":
             print_cost_summary(session_started, turn_count)
+            continue
+
+        if user_input == "/latency":
+            print_latency_summary(session_started)
             continue
 
         if user_input == "/stats":
@@ -381,10 +444,17 @@ def main():
         api_messages = build_api_messages(messages, loaded_files)
 
         # --- ウェブ検索を実行し、結果をシステムメッセージとして注入 ---
+        search_ms = None
+        search_cached = False
         if search_enabled:
-            results = search_web(user_input, api_key)
+            ts = time.perf_counter()
+            results, search_cached = search_with_cache(user_input, api_key)
+            search_ms = (time.perf_counter() - ts) * 1000
+
+            tag = "cache" if search_cached else "web"
+            q_disp = user_input if len(user_input) <= 40 else user_input[:40] + "…"
             if results:
-                print(f"[search] {len(results)} 件の検索結果を取得しました")
+                print(f"[search:{tag}] '{q_disp}' → {len(results)} 件（{search_ms:.0f}ms）")
                 ctx_parts = ["# ウェブ検索結果（以下の情報を根拠に記事を書いてください）\n"]
                 for i, r in enumerate(results, 1):
                     title = r.get("title", "")
@@ -394,6 +464,8 @@ def main():
                         summary = summary[:800] + "…"
                     ctx_parts.append(f"### {i}. {title}\nURL: {url}\n{summary}\n")
                 api_messages.append({"role": "system", "content": "\n".join(ctx_parts)})
+            else:
+                print(f"[search:{tag}] '{q_disp}' → 結果なし（{search_ms:.0f}ms）")
 
         api_messages.append({"role": "user", "content": user_input})
 
@@ -402,6 +474,14 @@ def main():
         reply_parts = []
         usage = None
         req_id = None
+
+        # ── レイテンシ計測 ──
+        t0 = time.perf_counter()
+        ttft_ms = None
+        first_at = None
+        last_at = None
+        chunk_count = 0
+
         try:
             with requests.post(
                 API_URL,
@@ -419,7 +499,8 @@ def main():
                 timeout=120,
             ) as r:
                 r.raise_for_status()
-                for line in r.iter_lines():
+                # chunk_size=1 でデフォルトバッファ（512）によるTTFTの歪みを避ける
+                for line in r.iter_lines(chunk_size=1):
                     if not line:
                         continue
                     line = line.decode("utf-8").strip()
@@ -444,13 +525,46 @@ def main():
                     delta = choices[0].get("delta", {})
                     content = delta.get("content")
                     if content:
+                        now = time.perf_counter()
+                        if ttft_ms is None:
+                            first_at = now
+                            ttft_ms = (now - t0) * 1000
+                        last_at = now
+                        chunk_count += 1
                         print(content, end="", flush=True)
                         reply_parts.append(content)
         except requests.exceptions.RequestException as e:
             print(f"\n[error] {e}", file=sys.stderr)
             continue
 
+        e2e_ms = (time.perf_counter() - t0) * 1000
+
+        # ── TPOTはトークン基準、チャンク間隔は別名で保持 ──
+        output_tokens = (
+            int(usage.get("completion_tokens", 0))
+            if usage and usage.get("completion_tokens") is not None else 0
+        )
+        chunk_interval_ms = (
+            (last_at - first_at) * 1000 / (chunk_count - 1)
+            if chunk_count > 1 and last_at is not None and first_at is not None
+            else None
+        )
+        tpot_ms = (
+            (last_at - first_at) * 1000 / (output_tokens - 1)
+            if output_tokens > 1 and last_at is not None and first_at is not None
+            else None
+        )
+
         print("\n")
+
+        latency = {
+            "search_ms": search_ms,
+            "ttft_ms": ttft_ms,
+            "e2e_ms": e2e_ms,
+            "chunks": chunk_count,
+            "chunk_interval_ms": chunk_interval_ms,
+            "tpot_ms": tpot_ms,
+        }
 
         if usage:
             try:
@@ -463,14 +577,21 @@ def main():
                         "purpose": "chat",
                         "turn": turn_count,
                         "search": search_enabled,
+                        "search_cached": search_cached,
                         "files": list(loaded_files.keys()),
                     },
+                    latency=latency,
                 )
-                print(f"  └─ {U.format_line(cost)}\n")
+                print(f"  └─ {U.format_line(cost)}")
+                print(f"  └─ {U.format_latency(latency)}")
+                if chunk_interval_ms is not None:
+                    print(f"  └─ chunk_interval {chunk_interval_ms:.0f}ms")
+                print()
             except ValueError as e:
                 print(f"  └─ [usage error] {e}\n")
         else:
             print("  └─ usage が返りませんでした（stream_options を確認）\n")
+            print(f"  └─ {U.format_latency(latency)}\n")
 
         full_reply = "".join(reply_parts)
         last_reply = full_reply

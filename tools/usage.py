@@ -8,6 +8,7 @@ usage は dict（requests で受け取った JSON）を前提。
 import json
 import sqlite3
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,6 +30,24 @@ DEFAULT_MODEL = "deepseek-flash"
 # ── DB ────────────────────────────────────────────────
 DB_PATH = Path.home() / ".deepseek-ac" / "usage.db"
 
+# レイテンシ列（既存DBへは _migrate で後付けする）
+_LATENCY_COLUMNS = [
+    ("search_ms", "REAL"),
+    ("ttft_ms",   "REAL"),
+    ("tpot_ms",   "REAL"),
+    ("e2e_ms",    "REAL"),
+    ("chunks",    "INTEGER"),
+]
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """既存DBにレイテンシ列がなければ追加する（冪等）。"""
+    have = {row[1] for row in conn.execute("PRAGMA table_info(api_usage)")}
+    for name, typ in _LATENCY_COLUMNS:
+        if name not in have:
+            conn.execute(f"ALTER TABLE api_usage ADD COLUMN {name} {typ}")
+
+
 def _connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
@@ -45,13 +64,20 @@ def _connect() -> sqlite3.Connection:
             cost_usd          REAL NOT NULL,
             is_peak           INTEGER NOT NULL,
             request_id        TEXT,
-            metadata          TEXT
+            metadata          TEXT,
+            search_ms         REAL,
+            ttft_ms           REAL,
+            tpot_ms           REAL,
+            e2e_ms            REAL,
+            chunks            INTEGER
         )
     """)
+    _migrate(conn)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_created ON api_usage(created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_model   ON api_usage(model)")
     conn.commit()
     return conn
+
 
 # ── ピーク判定 ────────────────────────────────────────
 def is_peak(ts: datetime | None = None) -> bool:
@@ -62,6 +88,7 @@ def is_peak(ts: datetime | None = None) -> bool:
         return False
     h = ts.hour
     return (1 <= h < 4) or (6 <= h < 10)
+
 
 # ── コスト計算 ────────────────────────────────────────
 def compute_cost(model: str, usage: dict, called_at: datetime | None = None) -> dict:
@@ -103,16 +130,31 @@ def compute_cost(model: str, usage: dict, called_at: datetime | None = None) -> 
         "called_at": ts,
     }
 
+
 # ── 記録 ──────────────────────────────────────────────
-def record(cost: dict, request_id: str | None = None, metadata: dict | None = None) -> None:
+def record(
+    cost: dict,
+    request_id: str | None = None,
+    metadata: dict | None = None,
+    latency: dict | None = None,
+) -> None:
+    """1呼び出し分を記録する。
+
+    latency は任意。与える場合は次のキーを想定（ms 単位、chunks は個数）:
+        {"search_ms": float, "ttft_ms": float, "tpot_ms": float,
+         "e2e_ms": float, "chunks": int}
+    未指定のキーは NULL として保存される。
+    """
+    lat = latency or {}
     conn = _connect()
     try:
         conn.execute(
             """INSERT INTO api_usage
                (id, created_at, model, prompt_tokens, completion_tokens,
                 cache_hit_tokens, cache_miss_tokens, reasoning_tokens,
-                cost_usd, is_peak, request_id, metadata)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                cost_usd, is_peak, request_id, metadata,
+                search_ms, ttft_ms, tpot_ms, e2e_ms, chunks)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 str(uuid.uuid4()),
                 cost["called_at"].isoformat(),
@@ -126,11 +168,17 @@ def record(cost: dict, request_id: str | None = None, metadata: dict | None = No
                 int(cost["peak"]),
                 request_id,
                 json.dumps(metadata or {}, ensure_ascii=False),
+                lat.get("search_ms"),
+                lat.get("ttft_ms"),
+                lat.get("tpot_ms"),
+                lat.get("e2e_ms"),
+                lat.get("chunks"),
             ),
         )
         conn.commit()
     finally:
         conn.close()
+
 
 # ── 1行表示 ───────────────────────────────────────────
 def format_line(cost: dict) -> str:
@@ -142,7 +190,25 @@ def format_line(cost: dict) -> str:
         f"  hit率 {rate:>5.1f}%  ${cost['cost_usd']:.6f} ({band})"
     )
 
-# ── 集計 ──────────────────────────────────────────────
+
+def format_latency(latency: dict | None) -> str:
+    """レイテンシの1行表示。未計測の項目は '—' で埋める。"""
+    if not latency:
+        return "ttft — / tpot — / e2e — / search — / chunks —"
+
+    def ms(v):
+        return f"{v:.0f}ms" if isinstance(v, (int, float)) else "—"
+
+    return (
+        f"ttft {ms(latency.get('ttft_ms'))}"
+        f" / tpot {ms(latency.get('tpot_ms'))}"
+        f" / e2e {ms(latency.get('e2e_ms'))}"
+        f" / search {ms(latency.get('search_ms'))}"
+        f" / chunks {latency.get('chunks', '—')}"
+    )
+
+
+# ── 集計（コスト）─────────────────────────────────────
 def summarize_session(since_iso: str) -> dict:
     conn = _connect()
     try:
@@ -164,6 +230,7 @@ def summarize_session(since_iso: str) -> dict:
     finally:
         conn.close()
 
+
 def summarize_today() -> dict:
     conn = _connect()
     try:
@@ -184,6 +251,7 @@ def summarize_today() -> dict:
     finally:
         conn.close()
 
+
 def daily(days: int = 7) -> list[tuple]:
     conn = _connect()
     try:
@@ -201,6 +269,7 @@ def daily(days: int = 7) -> list[tuple]:
         """, (days,)).fetchall()
     finally:
         conn.close()
+
 
 def by_model(days: int = 7) -> list[tuple]:
     conn = _connect()
@@ -220,6 +289,7 @@ def by_model(days: int = 7) -> list[tuple]:
     finally:
         conn.close()
 
+
 def peak_split() -> list[tuple]:
     conn = _connect()
     try:
@@ -233,3 +303,77 @@ def peak_split() -> list[tuple]:
         """).fetchall()
     finally:
         conn.close()
+
+
+# ── 集計（レイテンシ）─────────────────────────────────
+def _pct(vals: list[float | None], p: float) -> float | None:
+    """線形補間によるパーセンタイル。None は除外。空なら None。"""
+    clean = sorted(v for v in vals if v is not None)
+    if not clean:
+        return None
+    k = (len(clean) - 1) * p
+    f = int(k)
+    c = min(f + 1, len(clean) - 1)
+    return clean[f] + (clean[c] - clean[f]) * (k - f)
+
+
+def latency_summary(since_iso: str) -> dict:
+    """指定時刻以降のレイテンシ P50/P95 を返す。未計測行（ttft_ms IS NULL）は無視。
+
+    返り値のキー:
+        n, ttft_ms_p50, ttft_ms_p95, tpot_ms_p50, tpot_ms_p95,
+        e2e_ms_p50, e2e_ms_p95, search_ms_p50, search_ms_p95
+    データがない場合は {"n": 0} のみ。
+    """
+    conn = _connect()
+    try:
+        rows = conn.execute("""
+            SELECT ttft_ms, tpot_ms, e2e_ms, search_ms
+            FROM api_usage
+            WHERE created_at >= ? AND ttft_ms IS NOT NULL
+        """, (since_iso,)).fetchall()
+    finally:
+        conn.close()
+
+    out: dict = {"n": len(rows)}
+    if not rows:
+        return out
+
+    for i, name in enumerate(("ttft_ms", "tpot_ms", "e2e_ms", "search_ms")):
+        col = [r[i] for r in rows]
+        out[f"{name}_p50"] = _pct(col, 0.50)
+        out[f"{name}_p95"] = _pct(col, 0.95)
+    return out
+
+
+def latency_daily(days: int = 7) -> list[tuple]:
+    """日別の TTFT P50/P95 と search 時間 P50。推移を見る用。
+
+    返り値: [(day, ttft_p50, ttft_p95, search_p50), ...] 新しい日付が先頭。
+    """
+    conn = _connect()
+    try:
+        rows = conn.execute("""
+            SELECT date(created_at) AS day, ttft_ms, search_ms
+            FROM api_usage
+            WHERE date(created_at) >= date('now', ?)
+              AND ttft_ms IS NOT NULL
+            ORDER BY day DESC
+        """, (f"-{days} days",)).fetchall()
+    finally:
+        conn.close()
+
+    bucket: dict = defaultdict(lambda: {"ttft": [], "search": []})
+    for day, ttft, search in rows:
+        bucket[day]["ttft"].append(ttft)
+        bucket[day]["search"].append(search)
+
+    return [
+        (
+            day,
+            _pct(b["ttft"], 0.50),
+            _pct(b["ttft"], 0.95),
+            _pct(b["search"], 0.50),
+        )
+        for day, b in sorted(bucket.items(), reverse=True)
+    ]
