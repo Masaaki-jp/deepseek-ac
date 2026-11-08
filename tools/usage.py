@@ -377,3 +377,66 @@ def latency_daily(days: int = 7) -> list[tuple]:
         )
         for day, b in sorted(bucket.items(), reverse=True)
     ]
+
+
+# ── 予算チェック（呼び出し前）────────────────────────
+DEFAULT_DAILY_LIMIT_USD = 1.0
+DEFAULT_HOURLY_LIMIT_USD = 0.20
+
+
+def check_budget(
+    daily_limit: float = DEFAULT_DAILY_LIMIT_USD,
+    hourly_limit: float = DEFAULT_HOURLY_LIMIT_USD,
+) -> tuple[bool, str]:
+    """呼び出し前チェック。(ok, reason) を返す。"""
+    t = summarize_today()
+    if t["cost_usd"] >= daily_limit:
+        return False, (
+            f"daily limit reached: ${t['cost_usd']:.4f} >= ${daily_limit:.4f}"
+        )
+    conn = _connect()
+    try:
+        row = conn.execute("""
+            SELECT COALESCE(SUM(cost_usd), 0.0)
+            FROM api_usage
+            WHERE created_at >= datetime('now', '-1 hour')
+        """).fetchone()
+        hourly = row[0]
+    finally:
+        conn.close()
+    if hourly >= hourly_limit:
+        return False, (
+            f"hourly limit reached: ${hourly:.4f} >= ${hourly_limit:.4f}"
+        )
+    return True, ""
+
+
+def summarize_recent(hours: int = 1) -> dict:
+    """直近 N 時間のコストと呼び出し回数。"""
+    conn = _connect()
+    try:
+        row = conn.execute("""
+            SELECT COUNT(*), COALESCE(SUM(cost_usd), 0.0)
+            FROM api_usage
+            WHERE created_at >= datetime('now', ?)
+        """, (f"-{hours} hours",)).fetchone()
+        return {"calls": row[0], "cost_usd": row[1]}
+    finally:
+        conn.close()
+
+
+def summarize_baseline_per_hour(days: int = 7) -> float:
+    """過去 N 日間の「1時間あたり平均コスト」。データ不足なら 0.0。"""
+    conn = _connect()
+    try:
+        row = conn.execute("""
+            SELECT COALESCE(SUM(cost_usd), 0.0)
+            FROM api_usage
+            WHERE created_at >= datetime('now', ?)
+        """, (f"-{days} days",)).fetchone()
+        total = row[0]
+        if total <= 0:
+            return 0.0
+        return total / (days * 24)
+    finally:
+        conn.close()

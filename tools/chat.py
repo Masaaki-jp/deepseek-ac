@@ -8,53 +8,59 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 import requests
 
-# 自作モジュール（tools/ 直下にあるので script の dir 経由で import 可能）
 sys.path.insert(0, str(Path(__file__).parent))
 import usage as U
 
 API_URL = "https://api.deepseek.com/chat/completions"
+BALANCE_URL = "https://api.deepseek.com/user/balance"
 SEARCH_URL = "https://api.deepseek.com/v1/tools/search"
-MODEL = "deepseek-flash"  # 10/17以降の最新モデル
+MODEL = "deepseek-flash"
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+MAX_TOKENS = _env_int("DEEPSEEK_MAX_TOKENS", 8000)
+DAILY_LIMIT_USD = _env_float("DEEPSEEK_DAILY_LIMIT_USD", 1.0)
+HOURLY_LIMIT_USD = _env_float("DEEPSEEK_HOURLY_LIMIT_USD", 0.20)
+SPEED_ALERT_RATIO = _env_float("DEEPSEEK_SPEED_ALERT_RATIO", 3.0)
+SPEED_ALERT_MIN_USD = _env_float("DEEPSEEK_SPEED_ALERT_MIN_USD", 0.05)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PROMPT_FILE = Path(__file__).parent / "system_prompt.txt"
 
 EXCLUDE_DIRS = {".git", ".astro", "node_modules", "dist", ".next", "build", ".cache"}
-
 EXCLUDE_FILES = {
     "pnpm-lock.yaml", "package-lock.json", "yarn.lock",
     ".env", ".env.local", ".env.production",
 }
-
 ALLOWED_EXTS = {
     ".md", ".mdx", ".astro", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
     ".json", ".css", ".scss", ".html", ".txt", ".yml", ".yaml", ".toml",
 }
-
 MAX_FILE_SIZE = 100 * 1024
-
-AUTO_LOAD_FILES = [
-    "templates/article_template.md",
-    "src/content.config.ts",
-]
-
+AUTO_LOAD_FILES = ["templates/article_template.md", "src/content.config.ts"]
 WRITABLE_DIRS = ["content/articles"]
 WRITABLE_EXTS = {".md"}
 
-# 検索の設定（記事執筆用途では常時ONを前提に、タイムアウトとキャッシュで運用を安定させる）
 SEARCH_TIMEOUT_S = 8.0
 SEARCH_CACHE_MAX = 32
-
-# セッション内検索キャッシュ（同一クエリの連投を吸収）
+BALANCE_TIMEOUT_S = 10.0
 _search_cache: dict[tuple, list] = {}
-
 
 def load_system_prompt() -> str:
     if PROMPT_FILE.exists():
         base = PROMPT_FILE.read_text(encoding="utf-8").strip()
     else:
         base = "You are a helpful assistant."
-
     today = date.today().isoformat()
     return (
         base
@@ -63,11 +69,8 @@ def load_system_prompt() -> str:
         + "日付を推測したり、過去や未来の日付を書いてはいけません。\n"
     )
 
-
 def normalize_command(s: str) -> str:
-    """コマンド内の全角スラッシュを半角に。各種空白は正規表現側で吸収。"""
     return s.replace("／", "/")
-
 
 def safe_resolve(rel_path: str):
     try:
@@ -79,7 +82,6 @@ def safe_resolve(rel_path: str):
     except ValueError:
         return None
     return p
-
 
 def is_excluded(p: Path) -> bool:
     rel = p.relative_to(PROJECT_ROOT)
@@ -94,7 +96,6 @@ def is_excluded(p: Path) -> bool:
         return True
     return False
 
-
 def list_files():
     results = []
     for p in sorted(PROJECT_ROOT.rglob("*")):
@@ -104,7 +105,6 @@ def list_files():
             continue
         results.append(str(p.relative_to(PROJECT_ROOT)))
     return results
-
 
 def read_file(rel_path: str):
     p = safe_resolve(rel_path)
@@ -124,7 +124,6 @@ def read_file(rel_path: str):
     except UnicodeDecodeError:
         return False, "テキストとして読めません（バイナリの可能性）"
 
-
 def read_multiline_input() -> str:
     print("[paste] 複数行モード: 終了は 'EOF' のみの行（Ctrl+C でキャンセル）")
     print("... ", end="", flush=True)
@@ -143,10 +142,7 @@ def read_multiline_input() -> str:
     print(f"[paste] {len(lines)} 行 / {len(text)} 文字を受け取りました\n")
     return text
 
-
 def extract_markdown_block(text: str):
-    """テキストから最初の ```markdown ... ``` ブロックを抽出。
-    入れ子のコードブロックに対応するため、貪欲マッチ（.*）で最後の ``` まで取る。"""
     m = re.search(r"```markdown\s*\n(.*)\n```", text, re.DOTALL)
     if m:
         return m.group(1)
@@ -154,7 +150,6 @@ def extract_markdown_block(text: str):
     if m:
         return m.group(1)
     return None
-
 
 def is_writable(rel_path: str):
     p = safe_resolve(rel_path)
@@ -167,17 +162,13 @@ def is_writable(rel_path: str):
         return False, f"拡張子は {', '.join(WRITABLE_EXTS)} のみです"
     return True, str(p)
 
-
 def _make_cache_key(query: str, count: int) -> tuple:
-    """Search API の query は 1〜128 文字。キャッシュキーも同じ切り詰めで揃える。"""
     q = query.strip()
     if len(q) > 100:
         q = q[:100]
     return (q, count)
 
-
 def search_web(query: str, api_key: str, count: int = 5):
-    """DeepSeek Search API でウェブ検索し、結果のリストを返す。失敗時は空リスト。"""
     q = query.strip()
     if len(q) > 100:
         q = q[:100]
@@ -199,25 +190,19 @@ def search_web(query: str, api_key: str, count: int = 5):
         print(f"[search error] {e}", file=sys.stderr)
         return []
 
-
 def search_with_cache(query: str, api_key: str, count: int = 5):
-    """セッション内キャッシュ経由で検索。(results, cached) を返す。"""
     key = _make_cache_key(query, count)
     if key in _search_cache:
         return _search_cache[key], True
     res = search_web(query, api_key, count)
     _search_cache[key] = res
-    # 素朴な上限（LRUではなくFIFOで十分）
     if len(_search_cache) > SEARCH_CACHE_MAX:
         oldest = next(iter(_search_cache))
         del _search_cache[oldest]
     return res, False
 
-
 def build_api_messages(messages, loaded_files):
-    """prefix を安定させるため、[system] [参考資料] を先頭に固定し、
-    会話履歴（user/assistant）はその後に置く。"""
-    api_messages = [messages[0]]  # system プロンプト
+    api_messages = [messages[0]]
     if loaded_files:
         ref_parts = ["# 参考資料（プロジェクト内のファイル）\n"]
         for path, content in loaded_files.items():
@@ -225,9 +210,69 @@ def build_api_messages(messages, loaded_files):
         api_messages.append(
             {"role": "system", "content": "\n".join(ref_parts)}
         )
-    api_messages.extend(messages[1:])  # 会話履歴は後ろ
+    api_messages.extend(messages[1:])
     return api_messages
 
+def fetch_balance(api_key: str):
+    try:
+        r = requests.get(
+            BALANCE_URL,
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=BALANCE_TIMEOUT_S,
+        )
+        r.raise_for_status()
+        return True, r.json()
+    except requests.exceptions.RequestException as e:
+        return False, str(e)
+
+def print_balance(api_key: str) -> None:
+    ok, data = fetch_balance(api_key)
+    if not ok:
+        print(f"[balance] 取得失敗: {data}\n")
+        return
+    print(f"[balance] is_available: {data.get('is_available')}")
+    infos = data.get("balance_infos") or []
+    if not infos:
+        print("  （balance_infos が空です）\n")
+        return
+    for b in infos:
+        cur = b.get("currency", "?")
+        total = b.get("total_balance", "?")
+        granted = b.get("granted_balance", "?")
+        topped = b.get("topped_up_balance", "?")
+        print(f"  {cur}: total {total}  (granted {granted} / topped-up {topped})")
+    print()
+
+def check_budget_or_warn() -> bool:
+    ok, reason = U.check_budget(
+        daily_limit=DAILY_LIMIT_USD,
+        hourly_limit=HOURLY_LIMIT_USD,
+    )
+    if not ok:
+        print(f"[budget] {reason}", file=sys.stderr)
+        print("[budget] このターンは送信せずスキップします。"
+              "'exit' で終了してください。\n", file=sys.stderr)
+        return False
+    return True
+
+def check_speed_alert() -> None:
+    try:
+        recent = U.summarize_recent(hours=1)
+        baseline = U.summarize_baseline_per_hour(days=7)
+    except Exception:
+        return
+    recent_cost = recent.get("cost_usd", 0.0)
+    if recent_cost < SPEED_ALERT_MIN_USD:
+        return
+    if baseline <= 0:
+        return
+    ratio = recent_cost / baseline
+    if ratio >= SPEED_ALERT_RATIO:
+        print(
+            f"[alert] 消費ペース異常: 直近1h ${recent_cost:.4f}"
+            f" / 7日平均 ${baseline:.4f}/h の {ratio:.1f} 倍",
+            file=sys.stderr,
+        )
 
 def print_cost_summary(session_started: str, turn_count: int) -> None:
     s = U.summarize_session(session_started)
@@ -236,6 +281,7 @@ def print_cost_summary(session_started: str, turn_count: int) -> None:
         datetime.now(timezone.utc)
         - datetime.fromisoformat(session_started)
     ).total_seconds()
+    pct = 100.0 * t["cost_usd"] / DAILY_LIMIT_USD if DAILY_LIMIT_USD > 0 else 0.0
     print("[cost] session:")
     print(f"  turns       {turn_count}")
     print(f"  hit / miss  {s['hit']} / {s['miss']}  → hit率 {s['hit_rate']:.1f}%")
@@ -245,25 +291,22 @@ def print_cost_summary(session_started: str, turn_count: int) -> None:
     print("[cost] today:")
     print(f"  calls       {t['calls']}")
     print(f"  hit率       {t['hit_rate']:.1f}%")
-    print(f"  cost        ${t['cost_usd']:.6f}\n")
-
+    print(f"  cost        ${t['cost_usd']:.6f}")
+    print(f"  limit       ${DAILY_LIMIT_USD:.4f}  ({pct:.1f}% used)\n")
 
 def print_latency_summary(session_started: str) -> None:
     s = U.latency_summary(session_started)
     if s.get("n", 0) == 0:
         print("[latency] まだ計測データがありません\n")
         return
-
     def fmt(v):
         return f"{v:.0f}ms" if isinstance(v, (int, float)) else "—"
-
     print(f"[latency] session (n={s['n']})")
     for key in ("ttft_ms", "tpot_ms", "e2e_ms", "search_ms"):
         p50 = s.get(f"{key}_p50")
         p95 = s.get(f"{key}_p95")
         print(f"  {key:<10} p50 {fmt(p50):>8}  p95 {fmt(p95):>8}")
     print()
-
 
 def print_stats() -> None:
     print("[stats] daily (last 7 days):")
@@ -272,7 +315,6 @@ def print_stats() -> None:
         print("  （まだ記録がありません）")
     for day, calls, cost, hr in rows:
         print(f"  {day}  {calls:>4} calls  ${cost:>10.6f}  hit率 {hr or 0:>5.1f}%")
-
     print("[stats] latency daily (TTFT p50/p95, search p50):")
     lat_rows = U.latency_daily(7)
     if not lat_rows:
@@ -284,7 +326,6 @@ def print_stats() -> None:
             f"  {day}  ttft p50 {fmt(ttft50):>8} / p95 {fmt(ttft95):>8}"
             f"  search p50 {fmt(search50):>8}"
         )
-
     print("[stats] by model:")
     for model, calls, cost, hr in U.by_model(7):
         print(f"  {model:<20} {calls:>4} calls  ${cost:>10.6f}  hit率 {hr or 0:>5.1f}%")
@@ -293,6 +334,17 @@ def print_stats() -> None:
         print(f"  {band:<10} {calls:>4} calls  ${cost:>10.6f}")
     print()
 
+def print_turn_footer(session_started: str, turn_count: int) -> None:
+    try:
+        s = U.summarize_session(session_started)
+        t = U.summarize_today()
+        pct = 100.0 * t["cost_usd"] / DAILY_LIMIT_USD if DAILY_LIMIT_USD > 0 else 0.0
+        print(
+            f"  └─ [session] {turn_count} turns / ${s['cost_usd']:.4f}"
+            f"  |  today ${t['cost_usd']:.4f} ({pct:.0f}% of ${DAILY_LIMIT_USD:.2f})"
+        )
+    except Exception:
+        pass
 
 def main():
     api_key = os.environ.get("DEEPSEEK_API_KEY")
@@ -312,8 +364,10 @@ def main():
     print("DeepSeek チャット開始（終了: Ctrl+C または 'exit'）")
     print(f"プロジェクト: {PROJECT_ROOT}")
     print(f"DB: {U.DB_PATH}")
+    print(f"model: {MODEL}  max_tokens: {MAX_TOKENS}")
+    print(f"limit: daily ${DAILY_LIMIT_USD:.2f} / hourly ${HOURLY_LIMIT_USD:.2f}")
     print("コマンド: /ls  /read <path>  /files  /drop <path>  /paste  /save <path>"
-          "  /clear  /reload  /search  /cost  /latency  /stats")
+          "  /clear  /reload  /search  /cost  /latency  /stats  /balance")
 
     for rel in AUTO_LOAD_FILES:
         ok, content = read_file(rel)
@@ -360,6 +414,10 @@ def main():
 
         if user_input == "/cost":
             print_cost_summary(session_started, turn_count)
+            continue
+
+        if user_input == "/balance":
+            print_balance(api_key)
             continue
 
         if user_input == "/latency":
@@ -440,10 +498,11 @@ def main():
             print(f"[save] {rel} に保存しました（{len(content)} 文字）\n")
             continue
 
-        # ── prefix を安定させた組み立て ──
+        if not check_budget_or_warn():
+            continue
+
         api_messages = build_api_messages(messages, loaded_files)
 
-        # --- ウェブ検索を実行し、結果をシステムメッセージとして注入 ---
         search_ms = None
         search_cached = False
         if search_enabled:
@@ -475,7 +534,6 @@ def main():
         usage = None
         req_id = None
 
-        # ── レイテンシ計測 ──
         t0 = time.perf_counter()
         ttft_ms = None
         first_at = None
@@ -493,13 +551,13 @@ def main():
                     "model": MODEL,
                     "messages": api_messages,
                     "stream": True,
+                    "max_tokens": MAX_TOKENS,
                     "stream_options": {"include_usage": True},
                 },
                 stream=True,
                 timeout=120,
             ) as r:
                 r.raise_for_status()
-                # chunk_size=1 でデフォルトバッファ（512）によるTTFTの歪みを避ける
                 for line in r.iter_lines(chunk_size=1):
                     if not line:
                         continue
@@ -533,13 +591,22 @@ def main():
                         chunk_count += 1
                         print(content, end="", flush=True)
                         reply_parts.append(content)
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code if e.response is not None else 0
+            if status == 402:
+                print("\n[budget] 残高不足（402）。セッションを中断します。",
+                      file=sys.stderr)
+                print("[budget] https://platform.deepseek.com でチャージしてください。\n",
+                      file=sys.stderr)
+                break
+            print(f"\n[error] HTTP {status}: {e}", file=sys.stderr)
+            continue
         except requests.exceptions.RequestException as e:
             print(f"\n[error] {e}", file=sys.stderr)
             continue
 
         e2e_ms = (time.perf_counter() - t0) * 1000
 
-        # ── TPOTはトークン基準、チャンク間隔は別名で保持 ──
         output_tokens = (
             int(usage.get("completion_tokens", 0))
             if usage and usage.get("completion_tokens") is not None else 0
@@ -586,6 +653,8 @@ def main():
                 print(f"  └─ {U.format_latency(latency)}")
                 if chunk_interval_ms is not None:
                     print(f"  └─ chunk_interval {chunk_interval_ms:.0f}ms")
+                print_turn_footer(session_started, turn_count)
+                check_speed_alert()
                 print()
             except ValueError as e:
                 print(f"  └─ [usage error] {e}\n")
@@ -597,7 +666,6 @@ def main():
         last_reply = full_reply
         messages.append({"role": "user", "content": user_input})
         messages.append({"role": "assistant", "content": full_reply})
-
 
 if __name__ == "__main__":
     main()
