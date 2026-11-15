@@ -120,6 +120,24 @@ def call_deepseek(prompt: str, cfg: dict, api_key: str) -> dict:
     raise RuntimeError(f"API呼び出しが {max_retries + 1} 回失敗しました: {last_err}")
 
 
+def extract_title(article: str) -> str:
+    """記事のタイトルを取得する。
+    優先順位: YAMLフロントマターの title → H1見出し → 空文字
+    """
+    # YAMLフロントマター
+    m = re.match(r"^---\s*\n(.*?)\n---", article, flags=re.DOTALL)
+    if m:
+        fm = m.group(1)
+        t = re.search(r'^title:\s*["\']?(.+?)["\']?\s*$', fm, flags=re.MULTILINE)
+        if t:
+            return t.group(1).strip()
+    # H1見出し
+    h1 = re.search(r"^#\s+(.+)$", article, flags=re.MULTILINE)
+    if h1:
+        return h1.group(1).strip()
+    return ""
+
+
 def slug_from_path(path: Path) -> str:
     return path.stem
 
@@ -169,11 +187,14 @@ def main():
 
     # 表紙スライドがなければ先頭に追加
     if not any(s.get("layout") == "title" for s in all_slides):
+        h1 = extract_title(article)
+        cover_title = h1 if h1 else slug.replace("-", " ").title()
+        cover_sub = "DeepSeek API 技術解説"
         all_slides.insert(0, {
             "layout": "title",
-            "title": slug.replace("-", " ").title(),
-            "bullets": [sections[0]["heading"] if sections else ""],
-            "narration": ["この動画では、" + (sections[0]["heading"] if sections else "") + "について解説します。"],
+            "title": cover_title,
+            "bullets": [cover_sub],
+            "narration": [f"この動画では、{cover_title}について解説します。"],
             "notes": "",
             "diagram": None,
         })
