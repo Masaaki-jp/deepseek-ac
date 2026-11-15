@@ -12,6 +12,6 @@ video:
 
 # 抽出（extract.py）の設定
 extract:
-  max_tokens: 4000             # JSON出力の最大トークン数
+  max_tokens: 6000             # JSON出力の最大トークン数
   max_retries: 2               # 失敗時のリトライ回数
   chunk_max_chars: 6000        # 1チャンクあたりの最大文字数
