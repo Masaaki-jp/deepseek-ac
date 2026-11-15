@@ -5,7 +5,7 @@ api_key_env: DEEPSEEK_API_KEY
 # 動画全体のボリューム設定
 video:
   target_duration_min: 10      # 目標尺（分）
-  narration_chars_per_min: 320 # 1分あたりの読み上げ文字数（tideの実測値で調整）
+  narration_chars_per_min: 340 # 1分あたりの読み上げ文字数（tideの実測値で調整）
   slides_min: 8                # スライド枚数の下限
   slides_max: 25               # スライド枚数の上限
   slides_per_section: [1, 3]   # 1セクションあたりの枚数範囲
