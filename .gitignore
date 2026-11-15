@@ -67,3 +67,9 @@ Desktop.ini
 *.swp
 *.swo
 *~
+
+# Video Generation Outputs
+output/
+*.mp4
+*.wav
+*.pptx
