@@ -73,3 +73,7 @@ output/
 *.mp4
 *.wav
 *.pptx
+
+# YouTube OAuth credentials (DO NOT COMMIT)
+client_secret.json
+token.json
