@@ -63,7 +63,17 @@ def chunk_sections(sections: list[dict], max_chars: int) -> list[list[dict]]:
 
 def build_prompt(template: str, chunk: list[dict]) -> str:
     text = "\n\n".join(f"## {s['heading']}\n{s['body']}" for s in chunk)
-    return template.replace("{article_text}", text)
+    char_count = len(text)
+    # 1000字あたり1.5枚を目安に計算（下限2、上限5）
+    base = round(char_count / 1000 * 1.5)
+    target_min = max(2, base - 1)
+    target_max = max(target_min + 1, min(5, base + 1))
+    return (
+        template
+        .replace("{article_text}", text)
+        .replace("{target_slides_min}", str(target_min))
+        .replace("{target_slides_max}", str(target_max))
+    )
 
 
 def call_deepseek(prompt: str, cfg: dict, api_key: str) -> dict:
