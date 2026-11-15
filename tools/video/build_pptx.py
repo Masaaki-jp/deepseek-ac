@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from pptx import Presentation
-from pptx.util import Pt
+from pptx.util import Pt, Inches
 from pptx.oxml.ns import qn
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -46,17 +46,31 @@ def set_japanese_font(run, font_name: str = JP_FONT, size: int | None = None, bo
         el.set("typeface", font_name)
 
 
-def set_title(slide, text: str):
+def set_title(slide, text: str, is_cover: bool = False):
     """タイトルプレースホルダーに日本語フォントでテキストを入れる。"""
     title_shape = slide.shapes.title
     if title_shape is None:
         return
+
+    # 16:9用のレイアウト調整
+    if is_cover:
+        title_shape.left = Inches(0.8)
+        title_shape.top = Inches(2.5)
+        title_shape.width = Inches(11.7)
+        title_shape.height = Inches(2.0)
+    else:
+        title_shape.left = Inches(0.5)
+        title_shape.top = Inches(0.4)
+        title_shape.width = Inches(12.3)
+        title_shape.height = Inches(1.2)
+
     tf = title_shape.text_frame
     tf.text = ""
     p = tf.paragraphs[0]
     run = p.add_run()
     run.text = sanitize_title(text)
-    set_japanese_font(run, size=TITLE_SIZE, bold=True)
+    # 表紙は少し大きく
+    set_japanese_font(run, size=TITLE_SIZE + (4 if is_cover else 0), bold=True)
 
 
 def set_bullets(slide, bullets: list[str]):
@@ -71,6 +85,12 @@ def set_bullets(slide, bullets: list[str]):
             break
     if body is None:
         return
+
+    # 16:9用のレイアウト調整
+    body.left = Inches(0.5)
+    body.top = Inches(1.8)
+    body.width = Inches(12.3)
+    body.height = Inches(5.2)
 
     tf = body.text_frame
     tf.clear()
@@ -94,13 +114,17 @@ def set_notes(slide, notes: str):
 def build(ir_path: Path, out_path: Path, template: Path | None = None):
     deck = json.loads(ir_path.read_text(encoding="utf-8"))
     prs = Presentation(str(template)) if template else Presentation()
+    # 16:9 に設定（13.333 x 7.5 インチ）
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
 
     for i, s in enumerate(deck["slides"]):
         layout_name = s.get("layout", "title_and_content")
         layout_idx = 0 if layout_name == "title" else 1
         slide = prs.slides.add_slide(prs.slide_layouts[layout_idx])
 
-        set_title(slide, s.get("title", ""))
+        is_cover = (layout_name == "title")
+        set_title(slide, s.get("title", ""), is_cover=is_cover)
         set_bullets(slide, s.get("bullets", []))
         set_notes(slide, s.get("notes", ""))
 
