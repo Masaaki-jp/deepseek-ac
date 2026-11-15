@@ -10,7 +10,7 @@ tags:
   - YouTube API
   - 自動化
 publishedAt: 2026-11-15
-draft: true
+draft: false
 series: "DeepSeek応用"
 order: 3
 difficulty: advanced
