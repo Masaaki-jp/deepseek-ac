@@ -260,8 +260,9 @@ def build(ir_path: Path, out_path: Path, template: Path | None = None):
                 else:
                     has_image = True
                     if is_hero:
-                        max_w, max_h = 12.1, 5.2
-                        zone_left, zone_top = 0.6, 1.3
+                        # 字幕と被らないよう、高さを4.2インチに制限
+                        max_w, max_h = 12.1, 4.2
+                        zone_left, zone_top = 0.6, 1.5
                     else:
                         max_w, max_h = 6.0, 4.5
                         zone_left, zone_top = 6.8, 1.8

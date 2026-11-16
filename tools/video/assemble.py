@@ -18,7 +18,10 @@ DEFAULT_FONT_SIZE = 22
 SUBTITLE_STYLE = (
     "PrimaryColour=&H00FFFFFF,"     # 白文字
     "OutlineColour=&H00000000,"     # 黒縁
-    "Outline=2,Shadow=0,MarginV=40,Alignment=2"
+    "BackColour=&H80000000,"        # 半透明の黒背景（縁取りだけだと読みにくい場合用）
+    "BorderStyle=1,"                # 縁取り+影
+    "Outline=3,"                    # 縁を少し太く
+    "Shadow=0,MarginV=40,Alignment=2"
 )
 
 
