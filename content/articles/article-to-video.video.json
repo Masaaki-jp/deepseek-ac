@@ -1,7 +1,7 @@
 {
-  "youtube_video_id": "XLAII2fGa90",
-  "youtube_url": "https://youtu.be/XLAII2fGa90",
+  "youtube_video_id": "08wCdBKeKUo",
+  "youtube_url": "https://www.youtube.com/watch?v=08wCdBKeKUo",
   "visibility": "unlisted",
-  "title": "LLMに動画を書かせない｜JSON Schemaと検証をセットで設計",
-  "article": "article-to-video.md"
+  "deck_ir_sha256": "16a7ac0bddbd756273278e8af2222cc108a37a40a14f957ab59408f239b0e709",
+  "title": "LLMに動画を書かせない｜JSON Schemaと検証をセットで設計"
 }
