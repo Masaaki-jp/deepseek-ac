@@ -50,7 +50,7 @@ def set_japanese_font(run, font_name: str = JP_FONT, size: int | None = None, bo
             rPr.append(el)
         el.set("typeface", font_name)
 
-def is_extreme_aspect(aspect: float, threshold: float = 3.0) -> bool:
+def is_extreme_aspect(aspect: float, threshold: float = 2.4) -> bool:
     return aspect > threshold or aspect < (1.0 / threshold)
 
 # ==========================================
@@ -144,10 +144,48 @@ def set_notes(slide, notes: str):
 # ==========================================
 # Mermaid レンダリング
 # ==========================================
+
+def add_logo(slide):
+    """スライドの右下にロゴを配置する。ダークテーマ用に白抜きにする。"""
+    try:
+        logo_path = Path(__file__).parent / "assets" / "logo.png"
+        if not logo_path.exists():
+            print(f"[warn] ロゴが見つかりません: {logo_path}", file=sys.stderr)
+            return
+
+        with Image.open(logo_path) as img:
+            img = img.convert("RGBA")
+            if img.width > 800:
+                img = img.resize((800, int(800 * img.height / img.width)), Image.LANCZOS)
+                
+            datas = list(img.getdata())
+            new_data = []
+            for item in datas:
+                r, g, b, a = item
+                if r > 200 and g > 200 and b > 200:
+                    new_data.append((255, 255, 255, 0))
+                else:
+                    new_data.append((255, 255, 255, a))
+            img.putdata(new_data)
+            
+            stream = io.BytesIO()
+            img.save(stream, format="PNG")
+            stream.seek(0)
+            
+            slide.shapes.add_picture(
+                stream,
+                left=Inches(11.0),
+                top=Inches(6.5),
+                width=Inches(1.8)
+            )
+            print(f"[done] ロゴを配置しました", file=sys.stderr)
+    except Exception as e:
+        print(f"[error] ロゴ配置失敗: {e}", file=sys.stderr)
+
 def trim_whitespace(img: Image.Image) -> Image.Image:
     """画像の白背景を透明にし、暗い色の線や文字を白に変換する。"""
     img = img.convert("RGBA")
-    datas = img.getdata()
+    datas = list(img.getdata())
     new_data = []
     for item in datas:
         r, g, b, a = item
@@ -319,6 +357,9 @@ def build(ir_path: Path, out_path: Path, template: Path | None = None):
             else:
                 # 図がない場合：中央に大きくテキスト
                 set_centered_bullets(slide, bullets, HERO_BULLET_SIZE)
+
+        # すべてのスライドの右下にロゴを追加
+        add_logo(slide)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     prs.save(str(out_path))
