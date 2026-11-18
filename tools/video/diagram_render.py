@@ -132,8 +132,22 @@ def set_direction(source: str, kind: str, direction: str) -> str:
     return source
 
 
-# 向きを選び直せる図の種類と、試す順番
+# 向きを選び直せる図の種類と、試す向き
 DIRECTIONS = {"flowchart": ["TD", "LR"], "state": ["TB", "LR"]}
+
+
+def directions_to_try(source: str, kind: str) -> list:
+    """書いた人（DeepSeek）の向きを先に試す。読みやすさが同じなら、書いた向きが残る。"""
+    options = DIRECTIONS.get(kind)
+    if not options:
+        return [None]
+    if kind == "flowchart":
+        m = re.search(r"^\s*(?:flowchart|graph)\s+(TD|TB|LR|RL|BT)", source, flags=re.MULTILINE)
+        written = {"TB": "TD", "BT": "TD", "RL": "LR"}.get(m.group(1), m.group(1)) if m else "TD"
+    else:
+        m = re.search(r"^\s*direction\s+(TB|TD|LR|RL|BT)\s*$", source, flags=re.MULTILINE)
+        written = {"TD": "TB", "BT": "TB", "RL": "LR"}.get(m.group(1), m.group(1)) if m else "TB"
+    return [written] + [d for d in options if d != written]
 
 
 def clean_source(source: str) -> str:
@@ -282,7 +296,7 @@ class DiagramRenderer:
         戻り値: (画像, 幅in, 高さin, 文字px, 向き)"""
         source = clean_source(source)
         best = None
-        for d in DIRECTIONS.get(kind, [None]):
+        for d in directions_to_try(source, kind):
             src = set_direction(source, kind, d) if d else source
             img, font_in_image = self._render(src)
             w_in, h_in, font_px = fit_to_zone(*img.size, max_w, max_h, font_in_image, self.cfg["max_font_px"])
