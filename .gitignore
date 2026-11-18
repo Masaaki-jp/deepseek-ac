@@ -77,3 +77,4 @@ output/
 # YouTube OAuth credentials (DO NOT COMMIT)
 client_secret.json
 token.json
+*.save
