@@ -26,7 +26,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from tools.video.deepseek_api import BudgetExceeded, DeepSeekError, chat  # noqa: E402
-from tools.video.diagram_render import DiagramRenderer, load_diagram_config  # noqa: E402
+from tools.video.diagram_render import DiagramRenderer, diagram_labels, load_diagram_config  # noqa: E402
 from tools.video.schema import DeckIR  # noqa: E402
 
 TOOLS_DIR = Path(__file__).resolve().parent
@@ -40,6 +40,39 @@ DEFAULT_REFINE_CFG = {
     "temperature": 0.2,
     "timeout": 120,
     "max_retries": 3,
+}
+
+_SPLIT_PARAMS = {
+    "type": "object",
+    "properties": {
+        "overview": {
+            "type": "object",
+            "description": "全体図。各グループを1つのノードにまとめ、グループどうしのつながりだけを描く",
+            "properties": {
+                "source": {"type": "string", "description": "全体図の Mermaid ソース"},
+                "narration": {"type": "array", "items": {"type": "string"},
+                              "description": "全体図のナレーション（2〜4文、1文40文字以内）"},
+            },
+            "required": ["source", "narration"],
+        },
+        "parts": {
+            "type": "array",
+            "description": "分解図（2〜4枚）。元の図の要素は、どれか1枚に必ず入れる",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "スライドのタイトル（20文字以内）"},
+                    "source": {"type": "string", "description": "分解図の Mermaid ソース"},
+                    "bullets": {"type": "array", "items": {"type": "string"},
+                                "description": "図が出せないときの代わりの要点（2〜3項目）"},
+                    "narration": {"type": "array", "items": {"type": "string"},
+                                  "description": "ナレーション（2〜4文、1文40文字以内）"},
+                },
+                "required": ["title", "source", "bullets", "narration"],
+            },
+        },
+    },
+    "required": ["overview", "parts"],
 }
 
 TOOLS = [
@@ -73,7 +106,28 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_split",
+            "description": "全体図＋分解図への分割案を確かめる。各図の判定と、元の図の要素の取りこぼし、"
+                           "ナレーションの形式を調べて返す（描画の回数に数える）。",
+            "parameters": _SPLIT_PARAMS,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "submit_split",
+            "description": "全体図＋分解図への分割案を提出して作業を終える。元のスライドが全体図になり、"
+                           "その後ろに分解図のスライドが入る。",
+            "parameters": _SPLIT_PARAMS,
+        },
+    },
 ]
+
+SPLIT_MIN_PARTS, SPLIT_MAX_PARTS = 2, 4
+MAX_SENTENCE_CHARS = 50  # ナレーション1文の上限（プロンプトでは40文字と伝え、少し余裕を持たせる）
 
 
 def load_config() -> dict:
@@ -126,6 +180,80 @@ class Session:
         return data["choices"][0]["message"]
 
 
+def _check_narration(where: str, narration, problems: list[str]) -> None:
+    if not isinstance(narration, list) or not narration:
+        problems.append(f"{where}: narration が空です")
+        return
+    if not 2 <= len(narration) <= 4:
+        problems.append(f"{where}: narration は2〜4文にしてください（{len(narration)}文）")
+    long = [n for n in narration if len(str(n)) > MAX_SENTENCE_CHARS]
+    if long:
+        problems.append(f"{where}: 長すぎる文があります（{len(long)}文、1文40文字以内）")
+
+
+def check_split(args: dict, original: str, renderer: DiagramRenderer, zone: str) -> dict:
+    """分割案をコードで確かめる。DeepSeek にそのまま返す。"""
+    problems: list[str] = []
+    overview = args.get("overview") or {}
+    parts = args.get("parts") or []
+    result = {"verdict": "fail", "problems": problems}
+
+    if not SPLIT_MIN_PARTS <= len(parts) <= SPLIT_MAX_PARTS:
+        problems.append(f"分解図は{SPLIT_MIN_PARTS}〜{SPLIT_MAX_PARTS}枚にしてください（{len(parts)}枚）")
+
+    ov = renderer.measure(overview.get("source", ""), zone)
+    result["overview"] = ov
+    if ov["verdict"] != "pass":
+        problems.append("全体図: " + "; ".join(ov["problems"]))
+    _check_narration("全体図", overview.get("narration"), problems)
+
+    covered: set[str] = set()
+    result["parts"] = []
+    for k, part in enumerate(parts, 1):
+        m = renderer.measure(part.get("source", ""), "hero")
+        result["parts"].append({"title": part.get("title", ""), **m})
+        if m["verdict"] != "pass":
+            problems.append(f"分解図{k}: " + "; ".join(m["problems"]))
+        title = (part.get("title") or "").strip()
+        if not title or len(title) > 24:
+            problems.append(f"分解図{k}: title は1〜20文字にしてください")
+        if not part.get("bullets"):
+            problems.append(f"分解図{k}: bullets が空です")
+        _check_narration(f"分解図{k}", part.get("narration"), problems)
+        covered |= diagram_labels(part.get("source", ""))
+
+    missing = sorted(diagram_labels(original) - covered)
+    if missing:
+        problems.append("元の図の要素が分解図に入っていません: " + "、".join(missing))
+    result["missing"] = missing
+
+    if not problems:
+        result["verdict"] = "pass"
+    return result
+
+
+def split_to_slides(slide: dict, args: dict) -> tuple[dict, list[dict]]:
+    """合格した分割案から、全体図のスライド（元のスライドを置き換え）と分解図のスライドを作る。"""
+    overview = dict(slide)
+    overview["diagram"] = dict(slide["diagram"], source=args["overview"]["source"],
+                               reason=(slide["diagram"].get("reason") or "") + "（全体図）")
+    overview["layout"] = "diagram_hero"
+    overview["narration"] = args["overview"]["narration"]
+    parts = []
+    n = len(args["parts"])
+    for k, part in enumerate(args["parts"], 1):
+        parts.append({
+            "layout": "diagram_hero",
+            "title": part["title"],
+            "bullets": part["bullets"],
+            "narration": part["narration"],
+            "notes": "",
+            "columns": [],
+            "diagram": {"type": "mermaid", "source": part["source"], "reason": f"分解図 {k}/{n}"},
+        })
+    return overview, parts
+
+
 def build_user_message(slide: dict, source: str, measured: dict) -> str:
     return "\n".join([
         f"# スライドのタイトル\n{slide.get('title', '')}",
@@ -152,6 +280,7 @@ def refine_slide(slide: dict, slide_no: int, renderer: DiagramRenderer, session:
     ]
     best: tuple[str, dict] | None = None   # 合格した候補のうち最良のもの
     submitted: tuple[str, str] | None = None
+    split_submitted: dict | None = None
 
     # render の上限 + 提出 + 指示に従わなかったときの催促1回 を、この図の呼び出し上限にする
     for _ in range(rcfg["max_rounds"] + 2):
@@ -182,17 +311,41 @@ def refine_slide(slide: dict, slide_no: int, renderer: DiagramRenderer, session:
                               f"{'; '.join(result['problems'])}", file=sys.stderr)
                         if result["verdict"] == "pass" and (best is None or score(result) > score(best[1])):
                             best = (src, result)
+                elif name == "check_split":
+                    if log["renders"] >= rcfg["max_rounds"]:
+                        result = {"error": "確認の上限に達しました。submit_split か submit_diagram で提出してください。"}
+                    else:
+                        log["renders"] += 1
+                        result = check_split(args, original, renderer, zone)
+                        mark = "合格" if result["verdict"] == "pass" else "不合格"
+                        print(f"    分割の確認 {log['renders']}/{rcfg['max_rounds']}: {mark} "
+                              f"{'; '.join(result['problems'])[:200]}", file=sys.stderr)
                 elif name == "submit_diagram":
                     submitted = (args.get("source", ""), args.get("reason", ""))
+                    result = {"status": "received"}
+                elif name == "submit_split":
+                    split_submitted = args
                     result = {"status": "received"}
                 else:
                     result = {"error": f"知らないツールです: {name}"}
             messages.append({"role": "tool", "tool_call_id": call["id"],
                              "content": json.dumps(result, ensure_ascii=False)})
-        if submitted:
+        if submitted or split_submitted:
             break
 
     # 採用するかどうかは、コードが判定し直して決める
+    if split_submitted is not None:
+        checked = check_split(split_submitted, original, renderer, zone)
+        if checked["verdict"] == "pass":
+            overview, parts = split_to_slides(slide, split_submitted)
+            slide.clear()
+            slide.update(overview)
+            log["decision"] = "split"
+            log["note"] = f"全体図＋分解図{len(parts)}枚に分けた"
+            log["new_slides"] = parts
+            return log
+        log["note"] = f"分割案が不合格だったため採用しませんでした（{'; '.join(checked['problems'])[:200]}）"
+        # 1枚の図で合格した候補があればそちらを使う。なければ元の図を残す
     if submitted is not None:
         src, reason = submitted
         log["note"] = reason
@@ -268,9 +421,18 @@ def main():
         except DeepSeekError as e:
             log = {"slide": i, "title": slide.get("title", ""), "decision": "keep", "note": f"API エラー: {e}"}
             print(f"  [warn] #{i} は元の図を残します: {e}", file=sys.stderr)
-        labels = {"replace": "差し替え", "drop": "図をやめて箇条書き", "keep": "元の図のまま"}
+        labels = {"replace": "差し替え", "drop": "図をやめて箇条書き", "keep": "元の図のまま",
+                  "split": "全体図＋分解図に分割"}
         print(f"  → {labels[log['decision']]}  {log.get('note', '')}")
         logs.append(log)
+
+    # 分解図のスライドを、元のスライドの後ろに差し込む（後ろから入れて番号のずれを防ぐ）
+    for log in sorted(logs, key=lambda x: x["slide"], reverse=True):
+        new_slides = log.pop("new_slides", None)
+        if new_slides:
+            idx = log["slide"]
+            deck["slides"][idx:idx] = new_slides
+            log["inserted"] = len(new_slides)
 
     # 元のファイルを残してから上書きする
     backup = ir_path.with_name("deck_ir.before_refine.json")

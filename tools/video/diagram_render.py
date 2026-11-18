@@ -80,6 +80,7 @@ DEFAULT_DIAGRAM_CFG = {
     "min_font_px": 16,     # 動画上で文字がこれより小さくなる図は使わない
     "max_font_px": 36,     # 小さい図を拡大しすぎない上限
     "min_fill_ratio": 0.25,  # 図が置き場所の面積をこの割合以上使っていないと不合格（refine.py で使う）
+    "max_elements": {"flowchart": 8, "sequence": 10, "state": 7},  # これを超えると複雑すぎて不合格
     "kinds": ["flowchart", "sequence", "state"],
 }
 
@@ -197,6 +198,65 @@ def fit_to_zone(img_w: int, img_h: int, max_w: float, max_h: float,
     return img_w * k / PX_PER_INCH, img_h * k / PX_PER_INCH, font_px
 
 
+# ------------------------------------------
+# 図の中身を数える（複雑すぎる図を見つけ、分割したときの取りこぼしを確かめる）
+# ------------------------------------------
+_FLOW_SKIP = re.compile(r"^\s*(flowchart|graph|subgraph|end|direction|%%|classDef|class |style|linkStyle|click)\b")
+_SEQ_MESSAGE = re.compile(r"^\s*[A-Za-z_][\w]*\s*(-->>|->>|-->|->|--x|-x|--\)|-\))\s*[A-Za-z_][\w]*\s*:")
+_NODE_LABEL = re.compile(r"\b([A-Za-z_][\w]*)\s*(?:\[\[|\[\(|\(\(|\[|\(|\{\{|\{|>)\s*\"?([^\]\)\}\"]+?)\"?\s*(?:\]\]|\)\]|\)\)|\]|\)|\}\}|\})")
+
+
+def _flow_lines(source: str):
+    for line in source.splitlines():
+        if line.strip() and not _FLOW_SKIP.match(line):
+            yield line
+
+
+def flowchart_nodes(source: str) -> dict[str, str]:
+    """flowchart のノードID → ラベル（ラベルがなければID）。subgraph のIDは含めない。"""
+    groups = set(re.findall(r"^\s*subgraph\s+([A-Za-z_][\w]*)", source, flags=re.MULTILINE))
+    nodes: dict[str, str] = {}
+    for line in _flow_lines(source):
+        for node_id, label in _NODE_LABEL.findall(line):
+            nodes[node_id] = label.strip()
+        # ラベル・矢印上の文字を消してから、残ったIDを拾う
+        bare = _NODE_LABEL.sub(lambda m: m.group(1), line)
+        bare = re.sub(r"\|[^|]*\|", " ", bare)
+        bare = re.sub(r"(--|==|-\.)\s*[^->=.]+?\s*(-->|==>|\.->)", " --> ", bare)
+        for node_id in re.findall(r"\b([A-Za-z_][\w]*)\b", bare):
+            if node_id not in groups:
+                nodes.setdefault(node_id, node_id)
+    return nodes
+
+
+def diagram_labels(source: str) -> set[str]:
+    """図に登場する要素の名前（ノードのラベル、登場者、状態）。分割時の取りこぼし確認に使う。"""
+    kind = detect_diagram_kind(source or "")
+    if kind == "flowchart":
+        return {v for v in flowchart_nodes(source).values()}
+    if kind == "sequence":
+        named = re.findall(r"^\s*(?:participant|actor)\s+\w+\s+as\s+(.+?)\s*$", source, flags=re.MULTILINE)
+        return set(named)
+    if kind == "state":
+        return set(re.findall(r'^\s*state\s+"([^"]+)"\s+as\s+\w+', source, flags=re.MULTILINE))
+    return set()
+
+
+def count_elements(source: str) -> tuple[str, int]:
+    """図の複雑さ（数えたもの, 個数）。"""
+    kind = detect_diagram_kind(source or "")
+    if kind == "flowchart":
+        return "ノード", len(flowchart_nodes(source))
+    if kind == "sequence":
+        return "メッセージ", sum(1 for ln in source.splitlines() if _SEQ_MESSAGE.match(ln))
+    if kind == "state":
+        ids = set()
+        for a, b in re.findall(r"^\s*(\[\*\]|\w+)\s*-->\s*(\[\*\]|\w+)", source, flags=re.MULTILINE):
+            ids.update(x for x in (a, b) if x != "[*]")
+        return "状態", len(ids)
+    return "要素", 0
+
+
 class DiagramRenderer:
     """図を描いて、ゾーンに収まる最も読みやすい向きを選ぶ。"""
 
@@ -272,10 +332,21 @@ class DiagramRenderer:
             "limits": {"min_font_px": cfg["min_font_px"], "min_fill_ratio": cfg["min_fill_ratio"]},
         })
 
-        if font_px is not None and font_px < cfg["min_font_px"]:
-            result["problems"].append(f"文字が小さすぎます（{font_px:.0f}px、{cfg['min_font_px']}px以上が必要）")
-            result["hints"].append("要素を減らすか、2枚の図に分けてください")
-        if fill < cfg["min_fill_ratio"]:
+        unit, count = count_elements(source)
+        max_count = (cfg.get("max_elements") or {}).get(kind)
+        result["elements"] = {"unit": unit, "count": count, "max": max_count}
+        too_complex = max_count is not None and count > max_count
+        too_small = font_px is not None and font_px < cfg["min_font_px"]
+        if too_complex:
+            result["problems"].append(f"{unit}が多すぎます（{count}個、{max_count}個まで）")
+        if too_small:
+            result["problems"].append(f"文字が小さすぎます（{font_px:.1f}px、{cfg['min_font_px']}px以上が必要）")
+        if too_complex or too_small:
+            result["hints"].append("全体図と分解図に分けてください（check_split で確かめてから submit_split）。"
+                                   "細部がそれほど重要でなければ、要素を減らして1枚に収めても構いません")
+        # 文字がすでに上限まで大きいなら、要素が少ないだけなので画面が余っても問題にしない
+        font_capped = font_px is not None and font_px >= cfg["max_font_px"] - 0.5
+        if fill < cfg["min_fill_ratio"] and not font_capped:
             result["problems"].append(f"画面の使い方が小さすぎます（面積の{fill:.0%}、{cfg['min_fill_ratio']:.0%}以上が必要）")
             if w_use > 0.9 and h_use < 0.4:
                 result["hints"].append(
