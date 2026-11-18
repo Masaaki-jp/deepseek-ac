@@ -15,6 +15,7 @@ extract:
   max_tokens: 12000             # JSON出力の最大トークン数
   max_retries: 2               # 失敗時のリトライ回数
   chunk_max_chars: 3000        # 1チャンクあたりの最大文字数
+  summary_headings: [リード, 前提, まとめ, チェックリスト]   # 要約扱い（1枚まで・図なし）にする ## 見出し
 
 # 図の描画（build_pptx.py）の設定
 diagram:

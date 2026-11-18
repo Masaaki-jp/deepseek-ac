@@ -42,13 +42,20 @@ class Diagram(BaseModel):
         return self
 
 
+class Column(BaseModel):
+    """比較レイアウトの1列。"""
+    heading: str = Field(description="列の見出し")
+    items: list[str] = Field(default_factory=list, description="列の項目")
+
+
 class SlideIR(BaseModel):
     """1枚のスライドの意味的な構造。座標やデザインは含めない。"""
-    layout: str = Field(default="title_and_content", description="title, title_and_content など")
+    layout: str = Field(default="title_and_content", description="title, title_and_content, diagram_hero, comparison")
     title: str = Field(description="スライドのタイトル")
     bullets: list[str] = Field(default_factory=list, description="箇条書きのリスト")
     narration: list[str] = Field(default_factory=list, description="音声合成用の原稿（文の配列）")
     notes: str = Field(default="", description="発表者ノート")
+    columns: list[Column] = Field(default_factory=list, description="比較レイアウトの左右2列（comparison のときだけ使う）")
     diagram: Optional[Diagram] = Field(default=None, description="図解データ（図がないスライドは None）")
 
 

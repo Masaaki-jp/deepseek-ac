@@ -15,7 +15,7 @@ import yaml
 # プロジェクトルートを sys.path に追加（usage.py などを将来使うため）
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from tools.video.schema import DeckIR, SlideIR
+from tools.video.schema import DeckIR, SlideIR, detect_diagram_kind
 
 API_URL = "https://api.deepseek.com/chat/completions"
 PROMPT_PATH = Path(__file__).parent / "prompts" / "extract.txt"
@@ -28,18 +28,49 @@ def load_config() -> dict:
         return yaml.safe_load(f)
 
 
-def split_sections(markdown: str) -> list[dict]:
-    """## 見出しでセクションに分割する。"""
-    # ## で始まる行を境界にする
-    parts = re.split(r"^(## .+)$", markdown, flags=re.MULTILINE)
+DEFAULT_SUMMARY_HEADINGS = ["（冒頭）", "リード", "前提", "まとめ", "チェックリスト"]
+
+
+def strip_front_matter(markdown: str) -> str:
+    return re.sub(r"\A---\s*\n.*?\n---\s*\n", "", markdown, count=1, flags=re.DOTALL)
+
+
+def split_sections(markdown: str, summary_headings: list[str] | None = None) -> list[dict]:
+    """## と ### の見出しでセクションに分割する。
+
+    - フロントマターと H1 は除く
+    - コードブロックの中の # 行は見出しとして扱わない
+    - ### は「親 / 子」という見出しにし、要約系かどうかは親の ## で決める
+    """
+    summary_headings = summary_headings or DEFAULT_SUMMARY_HEADINGS
     sections = []
-    # parts[0] は最初の ## より前（タイトルなど）
-    if parts[0].strip():
-        sections.append({"heading": "（冒頭）", "body": parts[0].strip()})
-    for i in range(1, len(parts), 2):
-        heading = parts[i].lstrip("#").strip()
-        body = parts[i + 1].strip() if i + 1 < len(parts) else ""
-        sections.append({"heading": heading, "body": body})
+    h2 = "（冒頭）"
+    current = {"heading": h2, "lines": [], "summary": True}
+    in_fence = False
+
+    def flush():
+        body = "\n".join(current["lines"]).strip()
+        if body:
+            sections.append({"heading": current["heading"], "body": body, "summary": current["summary"]})
+
+    for line in strip_front_matter(markdown).splitlines():
+        if re.match(r"^\s*(```|~~~)", line):
+            in_fence = not in_fence
+        m = None if in_fence else re.match(r"^(#{1,3})\s+(.+?)\s*#*\s*$", line)
+        if m and len(m.group(1)) == 1:
+            continue  # H1（記事タイトル）は表紙で使うので本文から外す
+        if m:
+            flush()
+            text = m.group(2).strip()
+            if len(m.group(1)) == 2:
+                h2 = text
+                heading = text
+            else:
+                heading = f"{h2} / {text}"
+            current = {"heading": heading, "lines": [], "summary": h2 in summary_headings}
+        else:
+            current["lines"].append(line)
+    flush()
     return sections
 
 
@@ -61,19 +92,51 @@ def chunk_sections(sections: list[dict], max_chars: int) -> list[list[dict]]:
     return chunks
 
 
-def build_prompt(template: str, chunk: list[dict]) -> str:
-    text = "\n\n".join(f"## {s['heading']}\n{s['body']}" for s in chunk)
-    char_count = len(text)
-    # 1000字あたり1.5枚を目安に計算（下限2、上限5）
-    base = round(char_count / 1000 * 1.5)
-    target_min = max(2, base - 1)
-    target_max = max(target_min + 1, min(5, base + 1))
+def target_slide_range(chunk: list[dict]) -> tuple[int, int]:
+    """チャンクで作るスライド枚数の目安。
+    本文は1000字あたり1.5枚（ただし小見出しごとに1枚以上）、要約系セクションは1セクション1枚まで。"""
+    body_chars = sum(len(s["body"]) for s in chunk if not s["summary"])
+    n_body = sum(1 for s in chunk if not s["summary"])
+    n_summary = sum(1 for s in chunk if s["summary"])
+    lo = hi = 0
+    if body_chars:
+        # 文字数による目安と、本文の小見出しの数（1見出し1枚）の多い方
+        base = max(round(body_chars / 1000 * 1.5), n_body)
+        lo = max(1, base - 1)
+        hi = max(2, min(6, base + 1))
+    if n_summary:
+        lo += 1 if not body_chars else 0
+        hi += n_summary
+    return lo, max(lo, hi)
+
+
+def format_section(sec: dict) -> str:
+    mark = " ［要約］" if sec["summary"] else ""
+    return f"## {sec['heading']}{mark}\n{sec['body']}"
+
+
+def build_prompt(template: str, chunk: list[dict], outline: list[str], existing: list[str]) -> str:
+    text = "\n\n".join(format_section(s) for s in chunk)
+    target_min, target_max = target_slide_range(chunk)
     return (
         template
+        .replace("{outline}", "\n".join(f"- {h}" for h in outline))
+        .replace("{existing_slides}", "\n".join(f"- {t}" for t in existing) or "（まだありません）")
         .replace("{article_text}", text)
         .replace("{target_slides_min}", str(target_min))
         .replace("{target_slides_max}", str(target_max))
     )
+
+
+def describe_slide(slide: dict) -> str:
+    """作成済みスライドを、重複チェック用の1行にする。"""
+    desc = slide.get("title", "")
+    diagram = slide.get("diagram") or {}
+    if diagram.get("source"):
+        desc += f"（図: {detect_diagram_kind(diagram['source']) or '図'}）"
+    elif slide.get("layout") == "comparison":
+        desc += "（比較）"
+    return desc
 
 
 def call_deepseek(prompt: str, cfg: dict, api_key: str) -> dict:
@@ -170,16 +233,20 @@ def main():
     print(f"[info] slug: {slug}")
     print(f"[info] output: {out_dir}")
 
-    sections = split_sections(article)
-    print(f"[info] sections: {len(sections)}")
+    summary_headings = cfg["extract"].get("summary_headings") or DEFAULT_SUMMARY_HEADINGS
+    sections = split_sections(article, summary_headings)
+    print(f"[info] sections: {len(sections)}（うち要約系 {sum(s['summary'] for s in sections)}）")
+    outline = [s["heading"] + ("［要約］" if s["summary"] else "") for s in sections]
 
     chunks = chunk_sections(sections, cfg["extract"]["chunk_max_chars"])
     print(f"[info] chunks: {len(chunks)}  （1チャンク = 1回のAPI呼び出し）")
 
     all_slides = []
     for i, chunk in enumerate(chunks, 1):
-        print(f"[info] chunk {i}/{len(chunks)} を抽出中...")
-        prompt = build_prompt(template, chunk)
+        lo, hi = target_slide_range(chunk)
+        print(f"[info] chunk {i}/{len(chunks)} を抽出中...（{lo}〜{hi}枚）")
+        existing = [describe_slide(s) for s in all_slides]
+        prompt = build_prompt(template, chunk, outline, existing)
         result = call_deepseek(prompt, cfg, api_key)
         slides = result.get("slides", [])
         print(f"       → {len(slides)} 枚のスライドを抽出")

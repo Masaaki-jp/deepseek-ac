@@ -14,11 +14,12 @@ from pathlib import Path
 
 import requests
 import yaml
-from PIL import Image, ImageOps
+from PIL import Image, ImageChops, ImageOps
 from pptx import Presentation
 from pptx.util import Pt, Inches
 from pptx.oxml.ns import qn
 from pptx.dml.color import RGBColor
+from pptx.enum.shapes import MSO_CONNECTOR
 from pptx.enum.text import PP_ALIGN
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -33,6 +34,10 @@ JP_FONT = "メイリオ"
 TITLE_SIZE = 32
 HERO_BULLET_SIZE = 28   # 図スキップ時の中央テキスト
 SPLIT_BULLET_SIZE = 20  # 2分割時の左テキスト
+COMPARE_HEADING_SIZE = 28  # 比較レイアウトの列見出し
+COMPARE_ITEM_SIZE = 24     # 比較レイアウトの項目
+ACCENT_COLOR = RGBColor(0x7A, 0xA2, 0xF7)   # 列見出しと下線
+DIVIDER_COLOR = RGBColor(0x56, 0x5F, 0x89)  # 列の仕切り線
 
 # ==========================================
 # ユーティリティ関数
@@ -141,6 +146,53 @@ def set_split_bullets(slide, bullets: list[str]):
         run.text = sanitize_bullet(b)
         set_japanese_font(run, size=SPLIT_BULLET_SIZE)
 
+def remove_body_placeholder(slide):
+    for shape in list(slide.placeholders):
+        if shape.placeholder_format.idx == 1:
+            shape._element.getparent().remove(shape._element)
+
+
+def add_line(slide, x1: float, y1: float, x2: float, y2: float, color: RGBColor, width_pt: float):
+    line = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, Inches(x1), Inches(y1), Inches(x2), Inches(y2))
+    line.line.color.rgb = color
+    line.line.width = Pt(width_pt)
+
+
+def set_comparison(slide, columns: list[dict]) -> bool:
+    """左右2列の比較レイアウト。列の形が不正なら False を返す（箇条書きにフォールバック）。"""
+    cols = [c for c in columns if isinstance(c, dict) and c.get("heading") and c.get("items")]
+    if len(cols) != 2:
+        return False
+    remove_body_placeholder(slide)
+
+    top, bottom = 1.7, 5.7       # 字幕と被らないよう 5.7 インチまで
+    col_w, gap = 5.4, 1.0
+    lefts = [0.9, 0.9 + col_w + gap]
+    divider_x = lefts[0] + col_w + gap / 2
+    add_line(slide, divider_x, top + 0.1, divider_x, bottom, DIVIDER_COLOR, 1.5)
+
+    for left, col in zip(lefts, cols):
+        head = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(col_w), Inches(0.7))
+        tf = head.text_frame
+        tf.word_wrap = True
+        run = tf.paragraphs[0].add_run()
+        run.text = sanitize_bullet(col["heading"])
+        set_japanese_font(run, size=COMPARE_HEADING_SIZE, bold=True)
+        run.font.color.rgb = ACCENT_COLOR
+        add_line(slide, left, top + 0.75, left + col_w, top + 0.75, ACCENT_COLOR, 2)
+
+        body = slide.shapes.add_textbox(Inches(left), Inches(top + 0.95), Inches(col_w), Inches(bottom - top - 0.95))
+        tf = body.text_frame
+        tf.word_wrap = True
+        for k, item in enumerate(col["items"][:4]):
+            p = tf.paragraphs[0] if k == 0 else tf.add_paragraph()
+            p.space_after = Pt(12)
+            run = p.add_run()
+            run.text = "• " + sanitize_bullet(item)
+            set_japanese_font(run, size=COMPARE_ITEM_SIZE)
+    return True
+
+
 def set_notes(slide, notes: str):
     if not notes:
         return
@@ -165,16 +217,16 @@ def add_logo(slide):
             if img.width > 800:
                 img = img.resize((800, int(800 * img.height / img.width)), Image.LANCZOS)
                 
-            datas = list(img.getdata())
-            new_data = []
-            for item in datas:
-                r, g, b, a = item
-                if r > 200 and g > 200 and b > 200:
-                    new_data.append((255, 255, 255, 0))
-                else:
-                    new_data.append((255, 255, 255, a))
-            img.putdata(new_data)
-            
+            # 明るい部分（R,G,B すべて200超）を透明に、それ以外を白にする
+            r, g, b, a = img.split()
+            light = ImageChops.multiply(
+                ImageChops.multiply(*(ch.point(lambda v: 255 if v > 200 else 0) for ch in (r, g))),
+                b.point(lambda v: 255 if v > 200 else 0),
+            )
+            alpha = ImageChops.multiply(a, ImageOps.invert(light))
+            img = Image.new("RGBA", img.size, (255, 255, 255, 0))
+            img.putalpha(alpha)
+
             stream = io.BytesIO()
             img.save(stream, format="PNG")
             stream.seek(0)
@@ -219,6 +271,8 @@ MERMAID_CONFIG = {
         "compositeTitleBackground": _W, "altBackground": _W,
         "specialStateColor": _B, "innerEndBackground": _B,
     },
+    # シーケンス図で、メッセージの文字の上を縦線が貫かないよう背景色で縁取る
+    "themeCSS": ".messageText { stroke: #ffffff; stroke-width: 10px; paint-order: stroke fill; stroke-linejoin: round; }",
 }
 MERMAID_BASE_FONT_PX = 18
 PX_PER_INCH = 1920 / 13.333  # 動画（1920px幅）上での1インチあたりのピクセル数
@@ -409,6 +463,7 @@ def build(ir_path: Path, out_path: Path, template: Path | None = None):
 
         is_cover = (layout_name == "title")
         is_hero = (layout_name == "diagram_hero")
+        is_compare = (layout_name == "comparison")
         
         set_title(slide, s.get("title", ""), is_cover=is_cover)
         set_notes(slide, s.get("notes", ""))
@@ -468,6 +523,13 @@ def build(ir_path: Path, out_path: Path, template: Path | None = None):
                 run.text = sanitize_bullet(bullets[0])
                 set_japanese_font(run, size=24)
                 
+        elif is_compare and not has_image:
+            if set_comparison(slide, s.get("columns") or []):
+                print(f"[done] #{i+1} 比較レイアウトを配置しました", file=sys.stderr)
+            else:
+                print(f"  [skip] #{i+1} 比較の列が2つそろっていないため箇条書きにします", file=sys.stderr)
+                set_centered_bullets(slide, bullets, HERO_BULLET_SIZE)
+
         elif is_hero:
             if not has_image:
                 # 図がスキップされた or 無い場合：中央に大きくテキスト
