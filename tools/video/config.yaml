@@ -23,4 +23,14 @@ diagram:
   render_scale: 3     # ローカル描画の倍率（大きいほど高精細）
   min_font_px: 16     # 動画上で文字がこれより小さくなる図は使わない（箇条書きにする）
   max_font_px: 36     # 小さい図を拡大しすぎない上限
+  min_fill_ratio: 0.25  # 図が置き場所の面積をこの割合以上使っていないと不合格（refine.py が直す）
   kinds: [flowchart, sequence, state]   # 使ってよい図の種類
+
+# 図の改善（refine.py）の設定。不合格の図だけを DeepSeek に直させる
+refine:
+  max_rounds: 3        # 1枚の図につき、描いて確かめる回数の上限
+  max_api_calls: 30    # 1回の実行で DeepSeek を呼ぶ回数の上限（全スライド合計）
+  max_tokens: 2000
+  temperature: 0.2
+  timeout: 120         # 1回の呼び出しのタイムアウト（秒）
+  max_retries: 3       # 混雑（429 / 5xx）やタイムアウトのときの再試行回数

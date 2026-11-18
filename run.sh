@@ -5,19 +5,21 @@ set -euo pipefail
 # 設定
 ARTICLE="${1:-}"
 SKIP_UPLOAD=false
+SKIP_REFINE=false
 DRY_RUN=false
 
 # 引数パース
 for arg in "${@:2}"; do
   case "$arg" in
     --skip-upload) SKIP_UPLOAD=true ;;
+    --skip-refine) SKIP_REFINE=true ;;
     --dry-run)     DRY_RUN=true ;;
     *) echo "[error] 不明な引数: $arg"; exit 1 ;;
   esac
 done
 
 if [[ -z "$ARTICLE" ]]; then
-  echo "使い方: ./run.sh <article.md> [--skip-upload] [--dry-run]"
+  echo "使い方: ./run.sh <article.md> [--skip-upload] [--skip-refine] [--dry-run]"
   echo "例:     ./run.sh content/articles/deepseek-json-schema-validation.md"
   exit 1
 fi
@@ -54,52 +56,62 @@ echo "========================================="
 
 # 1. 抽出
 echo ""
-echo "[1/8] 抽出: article.md → deck_ir.json"
+echo "[1/9] 抽出: article.md → deck_ir.json"
 python tools/video/extract.py "$ARTICLE"
 
-# 2. PPTX生成
+# 2. 図の改善（判定で不合格の図だけ DeepSeek に直させる）
 echo ""
-echo "[2/8] PPTX生成: deck_ir.json → deck.pptx"
+if [[ "$SKIP_REFINE" == "true" ]]; then
+  echo "[2/9] 図の改善: スキップ（--skip-refine）"
+else
+  echo "[2/9] 図の改善: deck_ir.json の不合格の図を DeepSeek が修正"
+  # 失敗しても deck_ir.json は元のまま残るので、動画づくりは止めずに続ける
+  python tools/video/refine.py "$IR_PATH" || echo "[warn] 図の改善に失敗しました。元の deck_ir.json のまま続けます"
+fi
+
+# 3. PPTX生成
+echo ""
+echo "[3/9] PPTX生成: deck_ir.json → deck.pptx"
 python tools/video/build_pptx.py "$IR_PATH"
 
-# 3. PNG変換
+# 4. PNG変換
 echo ""
-echo "[3/8] 画像化: deck.pptx → slides/*.png"
+echo "[4/9] 画像化: deck.pptx → slides/*.png"
 python tools/video/pptx2png.py "$PPTX_PATH"
 
-# 4. TTS
+# 5. TTS
 echo ""
-echo "[4/8] 音声合成: deck_ir.json → audio/*.wav"
+echo "[5/9] 音声合成: deck_ir.json → audio/*.wav"
 python tools/video/tts.py "$IR_PATH"
 
-# 5. 字幕
+# 6. 字幕
 echo ""
-echo "[5/8] 字幕生成: → sub/*.srt"
+echo "[6/9] 字幕生成: → sub/*.srt"
 python tools/video/subtitle.py "$IR_PATH"
 
-# 6. 動画合成
+# 7. 動画合成
 echo ""
-echo "[6/8] 動画合成: → final.mp4"
+echo "[7/9] 動画合成: → final.mp4"
 python tools/video/assemble.py "$IR_PATH"
 
-# 7. メタデータ
+# 8. メタデータ
 echo ""
-echo "[7/8] YouTubeメタデータ生成: → yt_meta.json"
+echo "[8/9] YouTubeメタデータ生成: → yt_meta.json"
 python tools/video/yt_meta.py "$IR_PATH" \
   --article-url "https://deepseek.ac/articles/${SLUG}" \
   -o "$META_PATH"
 
-# 8. アップロード
+# 9. アップロード
 if [[ "$SKIP_UPLOAD" == "true" ]]; then
   echo ""
-  echo "[8/8] アップロード: スキップ（--skip-upload）"
+  echo "[9/9] アップロード: スキップ（--skip-upload）"
   echo "  手動で実行する場合:"
   echo "  python tools/video/yt_upload.py $MP4_PATH -m $META_PATH"
   exit 0
 fi
 
 echo ""
-echo "[8/8] YouTubeアップロード: final.mp4 → YouTube"
+echo "[9/9] YouTubeアップロード: final.mp4 → YouTube"
 UPLOAD_ARGS=()
 if [[ "$DRY_RUN" == "true" ]]; then
   UPLOAD_ARGS+=(--dry-run)

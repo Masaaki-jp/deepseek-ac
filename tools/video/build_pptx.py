@@ -1,19 +1,12 @@
 #!/usr/bin/env python3
 """deck_ir.json から deck.pptx を組み立てる。"""
 import argparse
-import base64
 import io
 import json
 import re
-import shutil
-import subprocess
 import sys
-import tempfile
-import time
 from pathlib import Path
 
-import requests
-import yaml
 from PIL import Image, ImageChops, ImageOps
 from pptx import Presentation
 from pptx.util import Pt, Inches
@@ -24,6 +17,7 @@ from pptx.enum.text import PP_ALIGN
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from tools.video.schema import detect_diagram_kind  # noqa: E402
+from tools.video.diagram_render import ZONES, DiagramRenderer, load_diagram_config  # noqa: E402
 
 # ==========================================
 # 定数・設定
@@ -61,9 +55,6 @@ def set_japanese_font(run, font_name: str = JP_FONT, size: int | None = None, bo
             el = rPr.makeelement(qn(tag), {})
             rPr.append(el)
         el.set("typeface", font_name)
-
-def is_extreme_aspect(aspect: float, threshold: float = 2.4) -> bool:
-    return aspect > threshold or aspect < (1.0 / threshold)
 
 # ==========================================
 # レイアウト設定関数
@@ -242,206 +233,6 @@ def add_logo(slide):
         print(f"[error] ロゴ配置失敗: {e}", file=sys.stderr)
 
 # ==========================================
-# Mermaid レンダリング
-# ==========================================
-# 白黒の線画で描き、あとで「白い線・透明な背景」に変換する
-_W, _B = "#ffffff", "#000000"
-MERMAID_CONFIG = {
-    "theme": "base",
-    "fontSize": 18,  # シーケンス図の文字はこちらで決まる
-    "flowchart": {"curve": "basis"},
-    # 下側の登場人物の箱を省略し、文字サイズをほかの図とそろえる
-    "sequence": {"mirrorActors": False, "actorFontSize": 18, "messageFontSize": 18, "noteFontSize": 18},
-    "themeVariables": {
-        "fontFamily": '"Noto Sans CJK JP", "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif',
-        "fontSize": "18px",
-        "background": _W, "mainBkg": _W, "textColor": _B, "lineColor": _B,
-        "primaryColor": _W, "primaryTextColor": _B, "primaryBorderColor": _B,
-        "secondaryColor": _W, "tertiaryColor": _W, "nodeBorder": _B,
-        "clusterBkg": _W, "clusterBorder": _B, "edgeLabelBackground": _W,
-        # シーケンス図
-        "actorBkg": _W, "actorBorder": _B, "actorTextColor": _B, "actorLineColor": _B,
-        "signalColor": _B, "signalTextColor": _B, "labelBoxBkgColor": _W,
-        "labelBoxBorderColor": _B, "labelTextColor": _B, "loopTextColor": _B,
-        "noteBkgColor": _W, "noteBorderColor": _B, "noteTextColor": _B,
-        "activationBkgColor": _W, "activationBorderColor": _B, "sequenceNumberColor": _W,
-        # 状態遷移図
-        "stateBkg": _W, "stateLabelColor": _B, "transitionColor": _B,
-        "transitionLabelColor": _B, "compositeBackground": _W,
-        "compositeTitleBackground": _W, "altBackground": _W,
-        "specialStateColor": _B, "innerEndBackground": _B,
-    },
-    # シーケンス図で、メッセージの文字の上を縦線が貫かないよう背景色で縁取る
-    "themeCSS": ".messageText { stroke: #ffffff; stroke-width: 10px; paint-order: stroke fill; stroke-linejoin: round; }",
-}
-MERMAID_BASE_FONT_PX = 18
-PX_PER_INCH = 1920 / 13.333  # 動画（1920px幅）上での1インチあたりのピクセル数
-
-TOOLS_DIR = Path(__file__).resolve().parent
-CONFIG_PATH = TOOLS_DIR / "config.yaml"
-MERMAID_DIR = TOOLS_DIR / "mermaid"
-
-DEFAULT_DIAGRAM_CFG = {
-    "renderer": "local",   # local（mermaid-cli）/ ink（mermaid.ink）
-    "render_scale": 3,     # ローカル描画の倍率（大きいほど高精細）
-    "min_font_px": 16,     # 動画上で文字がこれより小さくなる図は使わない
-    "max_font_px": 36,     # 小さい図を拡大しすぎない上限
-    "kinds": ["flowchart", "sequence", "state"],
-}
-
-
-def load_diagram_config() -> dict:
-    cfg = dict(DEFAULT_DIAGRAM_CFG)
-    try:
-        with open(CONFIG_PATH, encoding="utf-8") as f:
-            cfg.update((yaml.safe_load(f) or {}).get("diagram") or {})
-    except FileNotFoundError:
-        pass
-    return cfg
-
-
-def find_mmdc() -> str | None:
-    """tools/video/mermaid に入れた mermaid-cli を優先し、なければ PATH から探す。"""
-    local = MERMAID_DIR / "node_modules" / ".bin" / "mmdc"
-    if local.exists():
-        return str(local)
-    return shutil.which("mmdc")
-
-
-def to_line_art(png_bytes: bytes) -> Image.Image:
-    """白背景・黒線の画像を「白い線・透明な背景」に変換し、余白を切り落とす。
-    明るさをそのまま透明度に使うので、線の縁もなめらかになる。"""
-    with Image.open(io.BytesIO(png_bytes)) as src:
-        gray = src.convert("RGBA")
-        bg = Image.new("RGBA", gray.size, (255, 255, 255, 255))
-        gray = Image.alpha_composite(bg, gray).convert("L")
-    alpha = ImageOps.invert(gray)
-    img = Image.new("RGBA", gray.size, (255, 255, 255, 0))
-    img.putalpha(alpha)
-    bbox = alpha.point(lambda v: 255 if v > 8 else 0).getbbox()
-    return img.crop(bbox) if bbox else img
-
-
-def set_direction(source: str, kind: str, direction: str) -> str:
-    """図の向きを書き換える。flowchart は1行目、state は direction 行で指定する。"""
-    if kind == "flowchart":
-        return re.sub(
-            r"^(\s*)(flowchart|graph)\b[ \t]*(TD|TB|BT|LR|RL)?",
-            lambda m: f"{m.group(1)}flowchart {direction}",
-            source, count=1, flags=re.MULTILINE,
-        )
-    if kind == "state":
-        body = re.sub(r"^\s*direction\s+(TB|TD|BT|LR|RL)\s*$\n?", "", source, count=1, flags=re.MULTILINE)
-        return re.sub(r"^(\s*stateDiagram(-v2)?\s*)$", rf"\1\n  direction {direction}",
-                      body, count=1, flags=re.MULTILINE)
-    return source
-
-
-# 向きを選び直せる図の種類と、試す順番
-DIRECTIONS = {"flowchart": ["TD", "LR"], "state": ["TB", "LR"]}
-
-
-def clean_source(source: str) -> str:
-    source = re.sub(r"<\|.*?\|>", "", source)  # 特殊トークンの除去
-    source = re.sub(r"^\s*%%\{init.*?\}%%\s*", "", source, flags=re.DOTALL)  # 独自の init は使わない
-    return source.strip() + "\n"
-
-
-def render_mermaid_local(source: str, mmdc: str, scale: int) -> bytes:
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp = Path(tmp)
-        (tmp / "in.mmd").write_text(source, encoding="utf-8")
-        (tmp / "config.json").write_text(json.dumps(MERMAID_CONFIG, ensure_ascii=False), encoding="utf-8")
-        cmd = [mmdc, "-q", "-i", str(tmp / "in.mmd"), "-o", str(tmp / "out.png"),
-               "-c", str(tmp / "config.json"), "-b", "white", "-s", str(scale)]
-        puppeteer_cfg = MERMAID_DIR / "puppeteer.json"
-        if puppeteer_cfg.exists():
-            cmd += ["-p", str(puppeteer_cfg)]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        out = tmp / "out.png"
-        if r.returncode != 0 or not out.exists():
-            msg = (r.stderr or r.stdout).strip().splitlines()
-            raise RuntimeError("mermaid-cli 失敗: " + (msg[0] if msg else f"exit {r.returncode}"))
-        return out.read_bytes()
-
-
-def render_mermaid_ink(source: str, retries: int = 3) -> bytes:
-    init = json.dumps(MERMAID_CONFIG, ensure_ascii=False)
-    full = f"%%{{init: {init}}}%%\n{source}"
-    encoded = base64.urlsafe_b64encode(full.encode("utf-8")).decode("ascii")
-    url = f"https://mermaid.ink/img/{encoded}?type=png&bgColor=FFFFFF&width=2000"
-
-    for i in range(retries):
-        try:
-            r = requests.get(url, timeout=30)
-            if r.status_code == 200:
-                return r.content
-            elif r.status_code in (503, 504):
-                print(f"  [retry] mermaid.ink 503/504 エラー。リトライします ({i+1}/{retries})", file=sys.stderr)
-                time.sleep(2 ** i)
-            else:
-                r.raise_for_status()
-        except requests.RequestException as e:
-            if i == retries - 1:
-                raise RuntimeError(f"mermaid.ink 取得失敗: {e}")
-            time.sleep(2 ** i)
-    raise RuntimeError("mermaid.ink からの画像取得に失敗しました")
-
-
-def fit_to_zone(img_w: int, img_h: int, max_w: float, max_h: float,
-                font_in_image_px: float | None, max_font_px: float) -> tuple[float, float, float | None]:
-    """図をゾーンに収めたときの (幅in, 高さin, 動画上の文字px) を返す。
-    文字の大きさが分かるときは、max_font_px を超えないように拡大を抑える。"""
-    k = min(max_w * PX_PER_INCH / img_w, max_h * PX_PER_INCH / img_h)  # 画像px → 動画px
-    font_px = None
-    if font_in_image_px:
-        font_px = font_in_image_px * k
-        if font_px > max_font_px:
-            k *= max_font_px / font_px
-            font_px = max_font_px
-    return img_w * k / PX_PER_INCH, img_h * k / PX_PER_INCH, font_px
-
-
-class DiagramRenderer:
-    """図を描いて、ゾーンに収まる最も読みやすい画像を選ぶ。"""
-
-    def __init__(self, cfg: dict):
-        self.cfg = cfg
-        self.mmdc = find_mmdc() if cfg["renderer"] == "local" else None
-        if cfg["renderer"] == "local" and not self.mmdc:
-            print("[warn] mermaid-cli が見つからないため mermaid.ink で描画します"
-                  "（tools/video/mermaid で npm install を実行してください）", file=sys.stderr)
-        print(f"[info] 図の描画: {'mermaid-cli (' + self.mmdc + ')' if self.mmdc else 'mermaid.ink'}", file=sys.stderr)
-
-    def _render(self, source: str) -> tuple[Image.Image, float | None]:
-        if self.mmdc:
-            scale = int(self.cfg["render_scale"])
-            png = render_mermaid_local(source, self.mmdc, scale)
-            return to_line_art(png), MERMAID_BASE_FONT_PX * scale
-        return to_line_art(render_mermaid_ink(source)), None  # mermaid.ink は倍率が不明
-
-    def render(self, source: str, kind: str, max_w: float, max_h: float):
-        """戻り値: (画像, 幅in, 高さin, 文字px, 向き)。使えないときは理由付きで例外。"""
-        source = clean_source(source)
-        best = None
-        for d in DIRECTIONS.get(kind, [None]):
-            src = set_direction(source, kind, d) if d else source
-            img, font_in_image = self._render(src)
-            w_in, h_in, font_px = fit_to_zone(*img.size, max_w, max_h, font_in_image, self.cfg["max_font_px"])
-            score = font_px if font_px is not None else w_in * h_in
-            if best is None or score > best[0]:
-                best = (score, img, w_in, h_in, font_px, d)
-            if font_px is not None and font_px >= self.cfg["max_font_px"]:
-                break  # これ以上は大きくならない
-        _, img, w_in, h_in, font_px, d = best
-        if font_px is not None and font_px < self.cfg["min_font_px"]:
-            raise ValueError(f"文字が小さすぎる（{font_px:.1f}px < {self.cfg['min_font_px']}px）")
-        if font_px is None and is_extreme_aspect(img.width / img.height):
-            raise ValueError(f"縦横比が極端（{img.width / img.height:.2f}）")
-        return img, w_in, h_in, font_px, d
-
-
-# ==========================================
 # メイン組み立てロジック
 # ==========================================
 def build(ir_path: Path, out_path: Path, template: Path | None = None):
@@ -474,13 +265,9 @@ def build(ir_path: Path, out_path: Path, template: Path | None = None):
         
         if diagram and diagram.get("type", "mermaid") == "mermaid" and diagram.get("source"):
             kind = detect_diagram_kind(diagram["source"])
-            if is_hero:
-                # 字幕と被らないよう、高さを4.2インチに制限
-                max_w, max_h = 12.1, 4.2
-                zone_left, zone_top = 0.6, 1.5
-            else:
-                max_w, max_h = 6.0, 4.5
-                zone_left, zone_top = 6.8, 1.8
+            zone = ZONES["hero" if is_hero else "split"]
+            max_w, max_h = zone["max_w"], zone["max_h"]
+            zone_left, zone_top = zone["left"], zone["top"]
             try:
                 if kind not in renderer.cfg["kinds"]:
                     raise ValueError(f"対応していない図の種類（{kind or '不明'}）")
