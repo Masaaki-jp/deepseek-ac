@@ -4,7 +4,9 @@
     "config:best-practices",
     ":separateMajorReleases"
   ],
-  "dependencyDashboard": false,
+  "dependencyDashboard": {
+    "enabled": false
+  },
   "customManagers": [
     {
       "customType": "regex",
