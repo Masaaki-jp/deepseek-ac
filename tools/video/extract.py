@@ -230,6 +230,10 @@ def main():
     )
     print(f"[done] 保存: {out_path}")
     print(f"[meta] slides={len(all_slides)}, narration_chars={narration_chars}, est_duration={est_min}分")
+    kinds = [s.diagram.kind or "不明" for s in validated.slides if s.diagram]
+    if kinds:
+        summary = ", ".join(f"{k}={kinds.count(k)}" for k in sorted(set(kinds)))
+        print(f"[meta] diagrams: {summary}")
 
 
 if __name__ == "__main__":

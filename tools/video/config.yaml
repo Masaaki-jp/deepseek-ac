@@ -15,3 +15,11 @@ extract:
   max_tokens: 12000             # JSON出力の最大トークン数
   max_retries: 2               # 失敗時のリトライ回数
   chunk_max_chars: 3000        # 1チャンクあたりの最大文字数
+
+# 図の描画（build_pptx.py）の設定
+diagram:
+  renderer: local     # local（mermaid-cli）/ ink（mermaid.ink）。local で見つからなければ ink を使う
+  render_scale: 3     # ローカル描画の倍率（大きいほど高精細）
+  min_font_px: 16     # 動画上で文字がこれより小さくなる図は使わない（箇条書きにする）
+  max_font_px: 36     # 小さい図を拡大しすぎない上限
+  kinds: [flowchart, sequence, state]   # 使ってよい図の種類

@@ -21,6 +21,11 @@
     {
       "matchUpdateTypes": ["patch", "minor", "major", "pin", "digest"],
       "automerge": true
+    },
+    {
+      "description": "mermaid-cli は図の見た目が変わりうるので、自動マージせずに確認してから取り込む",
+      "matchPackageNames": ["@mermaid-js/mermaid-cli"],
+      "automerge": false
     }
   ]
 }
