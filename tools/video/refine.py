@@ -26,7 +26,9 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from tools.video.deepseek_api import BudgetExceeded, DeepSeekError, chat  # noqa: E402
-from tools.video.diagram_render import DiagramRenderer, diagram_labels, load_diagram_config  # noqa: E402
+from tools.video.diagram_render import (  # noqa: E402
+    DiagramRenderer, diagram_labels, flowchart_nodes, load_diagram_config)
+from tools.video.schema import detect_diagram_kind  # noqa: E402
 from tools.video.schema import DeckIR  # noqa: E402
 
 TOOLS_DIR = Path(__file__).resolve().parent
@@ -62,13 +64,15 @@ _SPLIT_PARAMS = {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string", "description": "スライドのタイトル（20文字以内）"},
+                    "focus": {"type": "string",
+                              "description": "全体図の中で、この分解図にあたるノードのID（例: G1）。右上のミニマップで強調する"},
                     "source": {"type": "string", "description": "分解図の Mermaid ソース"},
                     "bullets": {"type": "array", "items": {"type": "string"},
                                 "description": "図が出せないときの代わりの要点（2〜3項目）"},
                     "narration": {"type": "array", "items": {"type": "string"},
                                   "description": "ナレーション（2〜4文、1文40文字以内）"},
                 },
-                "required": ["title", "source", "bullets", "narration"],
+                "required": ["title", "focus", "source", "bullets", "narration"],
             },
         },
     },
@@ -207,6 +211,8 @@ def check_split(args: dict, original: str, renderer: DiagramRenderer, zone: str)
         problems.append("全体図: " + "; ".join(ov["problems"]))
     _check_narration("全体図", overview.get("narration"), problems)
 
+    ov_src = overview.get("source", "")
+    ov_nodes = set(flowchart_nodes(ov_src)) if detect_diagram_kind(ov_src) == "flowchart" else None
     covered: set[str] = set()
     result["parts"] = []
     for k, part in enumerate(parts, 1):
@@ -220,6 +226,8 @@ def check_split(args: dict, original: str, renderer: DiagramRenderer, zone: str)
         if not part.get("bullets"):
             problems.append(f"分解図{k}: bullets が空です")
         _check_narration(f"分解図{k}", part.get("narration"), problems)
+        if ov_nodes is not None and part.get("focus") not in ov_nodes:
+            problems.append(f"分解図{k}: focus には全体図のノードID（{', '.join(sorted(ov_nodes))} のどれか）を指定してください")
         covered |= diagram_labels(part.get("source", ""))
 
     missing = sorted(diagram_labels(original) - covered)
@@ -249,7 +257,8 @@ def split_to_slides(slide: dict, args: dict) -> tuple[dict, list[dict]]:
             "narration": part["narration"],
             "notes": "",
             "columns": [],
-            "diagram": {"type": "mermaid", "source": part["source"], "reason": f"分解図 {k}/{n}"},
+            "diagram": {"type": "mermaid", "source": part["source"], "reason": f"分解図 {k}/{n}",
+                        "overview": args["overview"]["source"], "focus": part.get("focus")},
         })
     return overview, parts
 

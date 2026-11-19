@@ -5,6 +5,7 @@ build_pptx.py（スライドに貼る）と refine.py（DeepSeek に直させる
 描画は決まった処理なので、合否の判定はここ（コード）で行い、DeepSeek には判定結果だけを返す。
 """
 import base64
+import copy
 import io
 import json
 import re
@@ -67,6 +68,30 @@ MERMAID_CONFIG = {
     # シーケンス図で、メッセージの文字の上を縦線が貫かないよう背景色で縁取る
     "themeCSS": ".messageText { stroke: #ffffff; stroke-width: 10px; paint-order: stroke fill; stroke-linejoin: round; }",
 }
+# ------------------------------------------
+# 色付きで描くときの設定（subgraph のあるフローチャートと、強調表示だけ）
+# 白一色の設定の「白→透明、黒→白」に置き換え、暗い背景の上に透明な背景で直接描く
+# ------------------------------------------
+def _dark_config() -> dict:
+    cfg = copy.deepcopy(MERMAID_CONFIG)
+    tv = cfg["themeVariables"]
+    for k, v in list(tv.items()):
+        if v == _W:
+            tv[k] = "transparent"
+        elif v == _B:
+            tv[k] = _W
+    tv.update({"background": "transparent", "clusterBkg": "transparent", "clusterBorder": "#787c99",
+               "edgeLabelBackground": "transparent"})
+    cfg["themeCSS"] = (".messageText { stroke: #1a1b26; stroke-width: 10px; paint-order: stroke fill; }"
+                       " .flowchart-link { stroke-width: 1.5px; }")
+    return cfg
+
+
+DARK_CONFIG = _dark_config()
+GROUP_PALETTE = ["#7aa2f7", "#9ece6a", "#e0af68", "#bb9af7", "#7dcfff"]  # 青・緑・橙・紫・水色
+FOCUS_COLOR = "#7aa2f7"
+DIM_COLOR, DIM_TEXT = "#6b7394", "#9aa5ce"  # 強調しない部分。小さく描いても形がわかる明るさ
+
 MERMAID_BASE_FONT_PX = 18
 PX_PER_INCH = 1920 / 13.333  # 動画（1920px幅）上での1インチあたりのピクセル数
 
@@ -82,6 +107,7 @@ DEFAULT_DIAGRAM_CFG = {
     "min_fill_ratio": 0.25,  # 図が置き場所の面積をこの割合以上使っていないと不合格（refine.py で使う）
     "max_elements": {"flowchart": 8, "sequence": 10, "state": 7},  # これを超えると複雑すぎて不合格
     "kinds": ["flowchart", "sequence", "state"],
+    "color_groups": True,  # subgraph のある図をグループごとに色分けする
 }
 
 
@@ -153,16 +179,20 @@ def directions_to_try(source: str, kind: str) -> list:
 def clean_source(source: str) -> str:
     source = re.sub(r"<\|.*?\|>", "", source)  # 特殊トークンの除去
     source = re.sub(r"^\s*%%\{init.*?\}%%\s*", "", source, flags=re.DOTALL)  # 独自の init は使わない
+    # 見た目はシステム側で統一するので、図に書かれた配色の指定は外す
+    source = "\n".join(ln for ln in source.splitlines()
+                       if not re.match(r"^\s*(style|classDef|class|linkStyle)\b", ln))
     return source.strip() + "\n"
 
 
-def render_mermaid_local(source: str, mmdc: str, scale: int) -> bytes:
+def render_mermaid_local(source: str, mmdc: str, scale: int,
+                         config: dict | None = None, background: str = "white") -> bytes:
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         (tmp / "in.mmd").write_text(source, encoding="utf-8")
-        (tmp / "config.json").write_text(json.dumps(MERMAID_CONFIG, ensure_ascii=False), encoding="utf-8")
+        (tmp / "config.json").write_text(json.dumps(config or MERMAID_CONFIG, ensure_ascii=False), encoding="utf-8")
         cmd = [mmdc, "-q", "-i", str(tmp / "in.mmd"), "-o", str(tmp / "out.png"),
-               "-c", str(tmp / "config.json"), "-b", "white", "-s", str(scale)]
+               "-c", str(tmp / "config.json"), "-b", background, "-s", str(scale)]
         puppeteer_cfg = MERMAID_DIR / "puppeteer.json"
         if puppeteer_cfg.exists():
             cmd += ["-p", str(puppeteer_cfg)]
@@ -215,7 +245,7 @@ def fit_to_zone(img_w: int, img_h: int, max_w: float, max_h: float,
 # ------------------------------------------
 # 図の中身を数える（複雑すぎる図を見つけ、分割したときの取りこぼしを確かめる）
 # ------------------------------------------
-_FLOW_SKIP = re.compile(r"^\s*(flowchart|graph|subgraph|end|direction|%%|classDef|class |style|linkStyle|click)\b")
+_FLOW_SKIP = re.compile(r"^\s*(%%|(flowchart|graph|subgraph|end|direction|classDef|class|style|linkStyle|click)\b)")
 _SEQ_MESSAGE = re.compile(r"^\s*[A-Za-z_][\w]*\s*(-->>|->>|-->|->|--x|-x|--\)|-\))\s*[A-Za-z_][\w]*\s*:")
 _NODE_LABEL = re.compile(r"\b([A-Za-z_][\w]*)\s*(?:\[\[|\[\(|\(\(|\[|\(|\{\{|\{|>)\s*\"?([^\]\)\}\"]+?)\"?\s*(?:\]\]|\)\]|\)\)|\]|\)|\}\}|\})")
 
@@ -271,6 +301,76 @@ def count_elements(source: str) -> tuple[str, int]:
     return "要素", 0
 
 
+def subgraph_info(source: str) -> dict[str, dict]:
+    """subgraph のID → {"title": 見出し, "members": 中のノードID}（入れ子の subgraph は外側に含めない）。"""
+    groups: dict[str, dict] = {}
+    stack: list[str] = []
+    for line in source.splitlines():
+        m = re.match(r'^\s*subgraph\s+([A-Za-z_][\w]*)\s*(?:\[\s*"?(.*?)"?\s*\])?\s*$', line)
+        if m:
+            stack.append(m.group(1))
+            title = m.group(2) if m.group(2) is not None else m.group(1)
+            groups[m.group(1)] = {"title": title.strip(), "members": []}
+            continue
+        if re.match(r"^\s*end\s*$", line):
+            if stack:
+                stack.pop()
+            continue
+        if stack and not _FLOW_SKIP.match(line):
+            members = groups[stack[-1]]["members"]
+            for i in flowchart_nodes("flowchart TD\n" + line):
+                if i not in groups and i not in members:
+                    members.append(i)
+    return groups
+
+
+def named_groups(source: str) -> dict[str, list[str]]:
+    """見出しのある subgraph だけ（見出しが空白の枠は、2段に折り返すための並べ方なので除く）。"""
+    return {g: v["members"] for g, v in subgraph_info(source).items() if v["title"]}
+
+
+def decorate(source: str, focus: str | None = None) -> str:
+    """色の指定を足す。focus なし: グループごとに色分け。
+    focus あり（グループかノードのID）: そこだけ青く、ほかを暗くする。"""
+    info = subgraph_info(source)
+    groups = {g: v["members"] for g, v in info.items()}
+    named = named_groups(source)
+    nodes = list(flowchart_nodes(source))
+    lines: list[str] = []
+    for g in groups:
+        if g not in named:  # 並べ方のための枠は控えめな線にする
+            lines.append(f"style {g} fill:transparent,stroke:{DIM_COLOR},stroke-width:1px,color:{DIM_COLOR}")
+    if focus is None or (focus not in groups and focus not in nodes):
+        for i, (g, members) in enumerate(named.items()):
+            c = GROUP_PALETTE[i % len(GROUP_PALETTE)]
+            lines.append(f"style {g} fill:transparent,stroke:{c},stroke-width:2px,color:{c}")
+            if members:
+                lines.append(f"classDef grp{i} stroke:{c},stroke-width:1.5px")
+                lines.append(f"class {','.join(members)} grp{i}")
+    else:
+        lit = set(groups[focus]) if focus in groups else {focus}
+        for g in named:
+            if g == focus:
+                lines.append(f"style {g} fill:{FOCUS_COLOR}33,stroke:{FOCUS_COLOR},stroke-width:3px,color:{FOCUS_COLOR}")
+            else:
+                lines.append(f"style {g} fill:transparent,stroke:{DIM_COLOR},stroke-width:1px,color:{DIM_COLOR}")
+        if focus not in groups:
+            lines.append(f"classDef focus fill:{FOCUS_COLOR}33,stroke:{FOCUS_COLOR},stroke-width:3px")
+            lines.append(f"class {focus} focus")
+        dim = [n for n in nodes if n not in lit]
+        if dim:
+            lines.append(f"classDef dim stroke:{DIM_COLOR},color:{DIM_TEXT}")
+            lines.append(f"class {','.join(dim)} dim")
+    return source.rstrip() + "\n" + "\n".join(lines) + "\n"
+
+
+def trim_transparent(png_bytes: bytes) -> Image.Image:
+    with Image.open(io.BytesIO(png_bytes)) as src:
+        img = src.convert("RGBA")
+    bbox = img.getchannel("A").point(lambda v: 255 if v > 8 else 0).getbbox()
+    return img.crop(bbox) if bbox else img
+
+
 class DiagramRenderer:
     """図を描いて、ゾーンに収まる最も読みやすい向きを選ぶ。"""
 
@@ -284,21 +384,32 @@ class DiagramRenderer:
             print(f"[info] 図の描画: {'mermaid-cli (' + self.mmdc + ')' if self.mmdc else 'mermaid.ink'}",
                   file=sys.stderr)
 
-    def _render(self, source: str) -> tuple[Image.Image, float | None]:
+    def use_color(self, source: str, kind: str | None, focus: str | None) -> bool:
+        """色付きで描くのは、subgraph のあるフローチャートか、強調を指定したときだけ。"""
+        if not (self.mmdc and self.cfg.get("color_groups", True) and kind == "flowchart"):
+            return False
+        return bool(focus) or bool(named_groups(source))
+
+    def _render(self, source: str, kind: str | None = None,
+                focus: str | None = None) -> tuple[Image.Image, float | None]:
         if self.mmdc:
             scale = int(self.cfg["render_scale"])
+            if self.use_color(source, kind, focus):
+                png = render_mermaid_local(decorate(source, focus), self.mmdc, scale,
+                                           config=DARK_CONFIG, background="transparent")
+                return trim_transparent(png), MERMAID_BASE_FONT_PX * scale
             png = render_mermaid_local(source, self.mmdc, scale)
             return to_line_art(png), MERMAID_BASE_FONT_PX * scale
-        return to_line_art(render_mermaid_ink(source)), None  # mermaid.ink は倍率が不明
+        return to_line_art(render_mermaid_ink(source)), None  # mermaid.ink は倍率が不明（色なし）
 
-    def render_best(self, source: str, kind: str, max_w: float, max_h: float):
+    def render_best(self, source: str, kind: str, max_w: float, max_h: float, focus: str | None = None):
         """向きを変えて描き比べ、最も文字が大きくなるものを返す（合否は判定しない）。
         戻り値: (画像, 幅in, 高さin, 文字px, 向き)"""
         source = clean_source(source)
         best = None
         for d in directions_to_try(source, kind):
             src = set_direction(source, kind, d) if d else source
-            img, font_in_image = self._render(src)
+            img, font_in_image = self._render(src, kind, focus)
             w_in, h_in, font_px = fit_to_zone(*img.size, max_w, max_h, font_in_image, self.cfg["max_font_px"])
             score = font_px if font_px is not None else w_in * h_in
             if best is None or score > best[0]:

@@ -32,6 +32,8 @@ class Diagram(BaseModel):
     kind: Optional[str] = Field(default=None, description="図の種類（flowchart / sequence / state / timeline）")
     reason: str = Field(default="", description="その種類を選んだ理由（確認用）")
     source: str = Field(description="図のソースコード")
+    overview: Optional[str] = Field(default=None, description="分解図のとき、右上にミニマップとして出す全体図のソース")
+    focus: Optional[str] = Field(default=None, description="ミニマップの全体図で強調するノードのID")
 
     @model_validator(mode="after")
     def _sync_kind(self):

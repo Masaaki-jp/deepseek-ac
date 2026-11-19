@@ -12,7 +12,7 @@ from pptx import Presentation
 from pptx.util import Pt, Inches
 from pptx.oxml.ns import qn
 from pptx.dml.color import RGBColor
-from pptx.enum.shapes import MSO_CONNECTOR
+from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
 from pptx.enum.text import PP_ALIGN
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -59,7 +59,38 @@ def set_japanese_font(run, font_name: str = JP_FONT, size: int | None = None, bo
 # ==========================================
 # レイアウト設定関数
 # ==========================================
-def set_title(slide, text: str, is_cover: bool = False):
+MINIMAP = {"max_w": 3.7, "max_h": 0.9, "right": 12.9, "top": 0.3, "pad": 0.1}  # 分解図の右上に置く全体図
+MINIMAP_TITLE_W = 8.4  # ミニマップを置くスライドのタイトル幅（32ptで約19文字）
+
+
+def add_minimap(slide, renderer, overview: str, focus: str, slide_no: int) -> bool:
+    """分解図のスライドの右上に、今見ている部分を強調した小さな全体図を置く。"""
+    kind = detect_diagram_kind(overview)
+    if kind != "flowchart":
+        return False
+    try:
+        img, w_in, h_in, _, _ = renderer.render_best(overview, kind, MINIMAP["max_w"], MINIMAP["max_h"], focus=focus)
+    except Exception as e:  # noqa: BLE001
+        print(f"  [skip] #{slide_no} ミニマップを置けませんでした: {e}", file=sys.stderr)
+        return False
+    pad = MINIMAP["pad"]
+    frame_w, frame_h = w_in + 2 * pad, h_in + 2 * pad
+    left, top_ = MINIMAP["right"] - frame_w, MINIMAP["top"]
+    frame = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(left), Inches(top_),
+                                   Inches(frame_w), Inches(frame_h))
+    frame.fill.background()
+    frame.line.color.rgb = DIVIDER_COLOR
+    frame.line.width = Pt(1)
+    frame.adjustments[0] = 0.08
+    stream = io.BytesIO()
+    img.save(stream, format="PNG")
+    stream.seek(0)
+    slide.shapes.add_picture(stream, left=Inches(left + pad), top=Inches(top_ + pad),
+                             width=Inches(w_in), height=Inches(h_in))
+    return True
+
+
+def set_title(slide, text: str, is_cover: bool = False, width_in: float = 12.3):
     title_shape = slide.shapes.title
     if title_shape is None:
         return
@@ -72,7 +103,7 @@ def set_title(slide, text: str, is_cover: bool = False):
     else:
         title_shape.left = Inches(0.5)
         title_shape.top = Inches(0.3)
-        title_shape.width = Inches(12.3)
+        title_shape.width = Inches(width_in)
         title_shape.height = Inches(1.0)
 
     tf = title_shape.text_frame
@@ -256,11 +287,16 @@ def build(ir_path: Path, out_path: Path, template: Path | None = None):
         is_hero = (layout_name == "diagram_hero")
         is_compare = (layout_name == "comparison")
         
-        set_title(slide, s.get("title", ""), is_cover=is_cover)
+        diagram = s.get("diagram")
+        has_minimap = bool(diagram and diagram.get("overview") and diagram.get("focus"))
+        # ミニマップを置くスライドは、タイトルが重ならないよう幅を詰める
+        set_title(slide, s.get("title", ""), is_cover=is_cover,
+                  width_in=MINIMAP_TITLE_W if has_minimap else 12.3)
+        if has_minimap and add_minimap(slide, renderer, diagram["overview"], diagram["focus"], i + 1):
+            print(f"[done] #{i+1} ミニマップを置きました（強調: {diagram['focus']}）", file=sys.stderr)
         set_notes(slide, s.get("notes", ""))
 
         # 図解のレンダリングと配置
-        diagram = s.get("diagram")
         has_image = False
         
         if diagram and diagram.get("type", "mermaid") == "mermaid" and diagram.get("source"):
