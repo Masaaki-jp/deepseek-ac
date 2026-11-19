@@ -384,6 +384,10 @@ DEFAULT_DAILY_LIMIT_USD = 1.0
 DEFAULT_HOURLY_LIMIT_USD = 0.20
 
 
+# 注意: created_at は ISO 形式（"2026-11-19T06:45:00+00:00"）で保存している。
+# SQLite の datetime('now', ...) は "2026-11-19 06:15:00" の形なので、文字列のまま比べると
+# 区切りの "T" と空白の違いで同じ日の記録がすべて「新しい」と判定される。
+# 時刻で絞るときは datetime(created_at) で形をそろえてから比べること。
 def check_budget(
     daily_limit: float = DEFAULT_DAILY_LIMIT_USD,
     hourly_limit: float = DEFAULT_HOURLY_LIMIT_USD,
@@ -399,7 +403,7 @@ def check_budget(
         row = conn.execute("""
             SELECT COALESCE(SUM(cost_usd), 0.0)
             FROM api_usage
-            WHERE created_at >= datetime('now', '-1 hour')
+            WHERE datetime(created_at) >= datetime('now', '-1 hour')
         """).fetchone()
         hourly = row[0]
     finally:
@@ -418,7 +422,7 @@ def summarize_recent(hours: int = 1) -> dict:
         row = conn.execute("""
             SELECT COUNT(*), COALESCE(SUM(cost_usd), 0.0)
             FROM api_usage
-            WHERE created_at >= datetime('now', ?)
+            WHERE datetime(created_at) >= datetime('now', ?)
         """, (f"-{hours} hours",)).fetchone()
         return {"calls": row[0], "cost_usd": row[1]}
     finally:
@@ -432,7 +436,7 @@ def summarize_baseline_per_hour(days: int = 7) -> float:
         row = conn.execute("""
             SELECT COALESCE(SUM(cost_usd), 0.0)
             FROM api_usage
-            WHERE created_at >= datetime('now', ?)
+            WHERE datetime(created_at) >= datetime('now', ?)
         """, (f"-{days} days",)).fetchone()
         total = row[0]
         if total <= 0:
