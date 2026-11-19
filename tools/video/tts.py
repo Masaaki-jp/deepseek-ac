@@ -12,8 +12,9 @@ from pathlib import Path
 import requests
 import yaml
 
-TTS_URL = "https://api.deepseek.com/v1/tools/tts"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+from tools.video import deepseek_api as API  # noqa: E402
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
 
 DEFAULT_VOICE = "tide"
@@ -35,22 +36,15 @@ def load_config() -> dict:
         return yaml.safe_load(f)
 
 
-def synthesize(text: str, api_key: str, voice_id: str) -> bytes:
-    """1回分のTTS呼び出し。WAVのbytesを返す。"""
-    r = requests.post(
-        TTS_URL,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={"text": text, "voice_id": voice_id, "format": "wav"},
-        timeout=180,
-    )
-    if r.status_code == 200:
-        return r.content
-    if r.status_code in (429, 503, 504):
-        raise RetryableError(f"HTTP {r.status_code}: {r.text[:200]}")
-    raise NonRetryableError(f"HTTP {r.status_code}: {r.text[:300]}")
+def synthesize(text: str, api_key: str, voice_id: str, price: float, metadata: dict) -> bytes:
+    """1回分のTTS呼び出し。WAVのbytesを返す（予算チェックと使用量の記録は deepseek_api が行う）。"""
+    try:
+        return API.tts(text, api_key=api_key, voice_id=voice_id, price_per_10k_chars=price,
+                       timeout=180, metadata=metadata)
+    except API.RetryableAPIError as e:
+        raise RetryableError(str(e)) from e
+    except (API.DeepSeekError, API.BudgetExceeded) as e:
+        raise NonRetryableError(str(e)) from e
 
 
 def probe_duration(wav_path: Path) -> float:
@@ -62,12 +56,13 @@ def probe_duration(wav_path: Path) -> float:
     return float(out.stdout.strip())
 
 
-def synthesize_with_retry(text: str, api_key: str, voice_id: str, out_path: Path) -> float:
+def synthesize_with_retry(text: str, api_key: str, voice_id: str, out_path: Path,
+                          price: float, metadata: dict) -> float:
     """リトライと尺検証込みでWAVを書き出す。尺（秒）を返す。"""
     last_err = None
     for attempt in range(MAX_RETRIES):
         try:
-            wav_bytes = synthesize(text, api_key, voice_id)
+            wav_bytes = synthesize(text, api_key, voice_id, price, {**metadata, "attempt": attempt + 1})
             out_path.write_bytes(wav_bytes)
             duration = probe_duration(out_path)
             if duration < MIN_DURATION_SEC:
@@ -82,13 +77,15 @@ def synthesize_with_retry(text: str, api_key: str, voice_id: str, out_path: Path
     raise RuntimeError(f"{out_path.name}: 全リトライ失敗: {last_err}")
 
 
-def process_slide(idx: int, slide: dict, out_dir: Path, api_key: str, voice_id: str) -> dict:
+def process_slide(idx: int, slide: dict, out_dir: Path, api_key: str, voice_id: str,
+                  price: float, slug: str) -> dict:
     text = "".join(slide.get("narration", []))
     if not text.strip():
         print(f"  [skip] slide_{idx:03d}: narration が空", file=sys.stderr)
         return {"index": idx, "file": None, "title": slide.get("title", ""), "char_count": 0, "duration_sec": 0.0}
     out_path = out_dir / f"slide_{idx:03d}.wav"
-    duration = synthesize_with_retry(text, api_key, voice_id, out_path)
+    duration = synthesize_with_retry(text, api_key, voice_id, out_path, price,
+                                     {"tool": "tts", "slug": slug, "slide": idx})
     return {
         "index": idx,
         "file": out_path.name,
@@ -127,12 +124,15 @@ def main():
     print(f"[info] slides: {len(slides)}")
     print(f"[info] voice: {args.voice}, parallel: {args.parallel}")
 
+    price = float(((load_config().get("tts") or {}).get("price_per_10k_chars")) or 0.225)
+    slug = ir_path.parent.name
     results = []
+    failed = []
     start = time.time()
 
     with ThreadPoolExecutor(max_workers=args.parallel) as ex:
         futures = {
-            ex.submit(process_slide, i + 1, s, out_dir, api_key, args.voice): i + 1
+            ex.submit(process_slide, i + 1, s, out_dir, api_key, args.voice, price, slug): i + 1
             for i, s in enumerate(slides)
         }
         done = 0
@@ -144,6 +144,7 @@ def main():
                 done += 1
                 print(f"[done] {done}/{len(slides)} slide_{idx:03d}.wav ({result['duration_sec']}s)")
             except Exception as e:
+                failed.append(idx)
                 print(f"[error] slide_{idx:03d}: {e}", file=sys.stderr)
 
     results.sort(key=lambda r: r["index"])
@@ -164,6 +165,13 @@ def main():
     print(f"[summary] 合計尺: {total_duration:.1f}秒 ({total_duration/60:.2f}分)")
     print(f"[summary] timing: {timing_path}")
 
+    chars = sum(r["char_count"] for r in results if r["file"])
+    print(f"[summary] 推定費用: ${chars * price / 10_000:.4f}（{chars}文字、1万文字あたり${price}）")
+
+    if failed:
+        print(f"[error] 音声を作れなかったスライドがあります: {', '.join(f'slide_{i:03d}' for i in sorted(failed))}",
+              file=sys.stderr)
+        sys.exit(1)
     if any(r["file"] is None for r in results):
         sys.exit(1)
 

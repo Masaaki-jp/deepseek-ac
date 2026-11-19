@@ -13,7 +13,10 @@ video:
 # 抽出（extract.py）の設定
 extract:
   max_tokens: 12000             # JSON出力の最大トークン数
-  max_retries: 2               # 失敗時のリトライ回数
+  max_retries: 2               # 空の応答・JSONとして読めない応答のときに呼び直す回数
+  api_retries: 3               # 混雑（429 / 5xx）やタイムアウトのときの再試行回数
+  timeout: 120                 # 1回の呼び出しのタイムアウト（秒）
+  temperature: 0.3
   chunk_max_chars: 3000        # 1チャンクあたりの最大文字数
   summary_headings: [リード, 前提, まとめ, チェックリスト]   # 要約扱い（1枚まで・図なし）にする ## 見出し
 
@@ -34,3 +37,8 @@ refine:
   temperature: 0.2
   timeout: 120         # 1回の呼び出しのタイムアウト（秒）
   max_retries: 3       # 混雑（429 / 5xx）やタイムアウトのときの再試行回数
+
+# 音声合成（tts.py）の設定
+tts:
+  # 料金（USD / 1万文字）。サイトの料金記事の値（期間限定50%OFF）。公式の Pricing で確認して更新すること
+  price_per_10k_chars: 0.225

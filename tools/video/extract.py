@@ -5,19 +5,17 @@ import json
 import os
 import re
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
 import yaml
 
 # プロジェクトルートを sys.path に追加（usage.py などを将来使うため）
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+from tools.video.deepseek_api import BudgetExceeded, chat  # noqa: E402
 from tools.video.schema import DeckIR, SlideIR, detect_diagram_kind
 
-API_URL = "https://api.deepseek.com/chat/completions"
 PROMPT_PATH = Path(__file__).parent / "prompts" / "extract.txt"
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -139,48 +137,41 @@ def describe_slide(slide: dict) -> str:
     return desc
 
 
-def call_deepseek(prompt: str, cfg: dict, api_key: str) -> dict:
-    """DeepSeek API を JSONモードで呼び出す。"""
-    model = cfg["model"]
-    max_tokens = cfg["extract"]["max_tokens"]
-    max_retries = cfg["extract"]["max_retries"]
+def call_deepseek(prompt: str, cfg: dict, api_key: str, metadata: dict | None = None) -> dict:
+    """DeepSeek API を JSONモードで呼び出す。
 
-    system = "あなたは指示に従い、必ずJSONのみを出力するアシスタントです。"
-    user = prompt + "\n\n必ず json 形式で出力してください。"
+    通信まわり（予算チェック・混雑時の再試行・使用量の記録）は deepseek_api.chat() に任せ、
+    ここでは「空の応答」「JSONとして読めない応答」のときだけ呼び直す。
+    """
+    ecfg = cfg["extract"]
+    max_retries = ecfg["max_retries"]
+    messages = [
+        {"role": "system", "content": "あなたは指示に従い、必ずJSONのみを出力するアシスタントです。"},
+        {"role": "user", "content": prompt + "\n\n必ず json 形式で出力してください。"},
+    ]
 
     last_err = None
     for attempt in range(max_retries + 1):
+        data, _ = chat(
+            messages,
+            model=cfg["model"],
+            api_key=api_key,
+            response_format={"type": "json_object"},
+            max_tokens=ecfg["max_tokens"],
+            temperature=ecfg.get("temperature", 0.3),
+            timeout=ecfg.get("timeout", 120),
+            max_retries=ecfg.get("api_retries", 3),
+            metadata={**(metadata or {}), "attempt": attempt + 1},
+        )
         try:
-            r = requests.post(
-                API_URL,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {api_key}",
-                },
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user},
-                    ],
-                    "response_format": {"type": "json_object"},
-                    "max_tokens": max_tokens,
-                    "temperature": 0.3,
-                },
-                timeout=120,
-            )
-            r.raise_for_status()
-            data = r.json()
             content = data["choices"][0]["message"]["content"]
             if not content or not content.strip():
                 raise ValueError("空のcontentが返りました（JSONモードの失敗）")
             return json.loads(content)
-        except (requests.RequestException, json.JSONDecodeError, KeyError, ValueError) as e:
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
             last_err = e
             print(f"[warn] attempt {attempt + 1} 失敗: {e}", file=sys.stderr)
-            if attempt < max_retries:
-                time.sleep(2 ** attempt)
-    raise RuntimeError(f"API呼び出しが {max_retries + 1} 回失敗しました: {last_err}")
+    raise RuntimeError(f"JSONの取得に {max_retries + 1} 回失敗しました: {last_err}")
 
 
 def extract_title(article: str) -> str:
@@ -247,7 +238,11 @@ def main():
         print(f"[info] chunk {i}/{len(chunks)} を抽出中...（{lo}〜{hi}枚）")
         existing = [describe_slide(s) for s in all_slides]
         prompt = build_prompt(template, chunk, outline, existing)
-        result = call_deepseek(prompt, cfg, api_key)
+        try:
+            result = call_deepseek(prompt, cfg, api_key, {"tool": "extract", "slug": slug, "chunk": i})
+        except BudgetExceeded as e:
+            print(f"[error] 予算の上限に達したため抽出を中止します: {e}", file=sys.stderr)
+            sys.exit(1)
         slides = result.get("slides", [])
         print(f"       → {len(slides)} 枚のスライドを抽出")
         all_slides.extend(slides)
