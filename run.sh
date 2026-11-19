@@ -7,6 +7,7 @@ ARTICLE="${1:-}"
 SKIP_UPLOAD=false
 SKIP_REFINE=false
 DRY_RUN=false
+PUBLISH=false
 
 # 引数パース
 for arg in "${@:2}"; do
@@ -14,12 +15,14 @@ for arg in "${@:2}"; do
     --skip-upload) SKIP_UPLOAD=true ;;
     --skip-refine) SKIP_REFINE=true ;;
     --dry-run)     DRY_RUN=true ;;
+    --publish)     PUBLISH=true ;;
     *) echo "[error] 不明な引数: $arg"; exit 1 ;;
   esac
 done
 
 if [[ -z "$ARTICLE" ]]; then
-  echo "使い方: ./run.sh <article.md> [--skip-upload] [--skip-refine] [--dry-run]"
+  echo "使い方: ./run.sh <article.md> [--skip-upload] [--skip-refine] [--dry-run] [--publish]"
+  echo "  --publish  アップロード後、記事の draft を false にする（動画リンクの挿入は常に行う）"
   echo "例:     ./run.sh content/articles/deepseek-json-schema-validation.md"
   exit 1
 fi
@@ -106,7 +109,7 @@ if [[ "$SKIP_UPLOAD" == "true" ]]; then
   echo ""
   echo "[9/9] アップロード: スキップ（--skip-upload）"
   echo "  手動で実行する場合:"
-  echo "  python tools/video/yt_upload.py $MP4_PATH -m $META_PATH"
+  echo "  python tools/video/yt_upload.py $MP4_PATH -m $META_PATH [--publish]"
   exit 0
 fi
 
@@ -115,6 +118,9 @@ echo "[9/9] YouTubeアップロード: final.mp4 → YouTube"
 UPLOAD_ARGS=()
 if [[ "$DRY_RUN" == "true" ]]; then
   UPLOAD_ARGS+=(--dry-run)
+fi
+if [[ "$PUBLISH" == "true" ]]; then
+  UPLOAD_ARGS+=(--publish)
 fi
 python tools/video/yt_upload.py "$MP4_PATH" -m "$META_PATH" "${UPLOAD_ARGS[@]}"
 
