@@ -42,3 +42,24 @@ refine:
 tts:
   # 料金（USD / 1万文字）。サイトの料金記事の値（期間限定50%OFF）。公式の Pricing で確認して更新すること
   price_per_10k_chars: 0.225
+
+# フォールバック（deepseek_api.py）。上から順に試し、混雑やエラーで続かないときに次の宛先へ移る
+# 音声合成（TTS）は DeepSeek 公式だけ（さくらのAI Engine には TTS がない）
+fallback:
+  cooldown_sec: 120    # 失敗した宛先を、この秒数だけ後回しにする
+  providers:
+    - name: deepseek                                   # 本来の宛先。モデルは上の model を使う
+      url: https://api.deepseek.com/chat/completions
+      key_env: DEEPSEEK_API_KEY
+    - name: sakura                                     # さくらのAI Engine（パブリックプレビュー）
+      url: https://api.ai.sakura.ad.jp/v1/chat/completions
+      key_env: SAKURA_AI_ENGINE_TOKEN                  # 未設定なら、この宛先は飛ばす
+      model: preview/DeepSeek-V4.1-Flash-1017
+      free_plan: true      # 無償プラン: 月3,000リクエストを超えると 429 で止まり、課金されない（費用0で記録）
+      price:               # 従量課金プランのときの料金（税込、2026-11-18 時点）
+        input_jpy_per_10k: 0.4
+        output_jpy_per_10k: 4.0
+        jpy_per_usd: 150
+      supports:            # probe_provider.py の結果で書き換える（null = 未確認、試してみる）
+        json_mode: null
+        tools: null

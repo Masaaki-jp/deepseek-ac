@@ -137,6 +137,12 @@ def describe_slide(slide: dict) -> str:
     return desc
 
 
+def strip_code_fence(text: str) -> str:
+    """```json ... ``` で囲まれていたら中身だけにする（JSONモードのない宛先にフォールバックしたとき用）。"""
+    m = re.match(r"^\s*```(?:json)?\s*\n(.*?)\n?```\s*$", text, flags=re.DOTALL)
+    return m.group(1) if m else text
+
+
 def call_deepseek(prompt: str, cfg: dict, api_key: str, metadata: dict | None = None) -> dict:
     """DeepSeek API を JSONモードで呼び出す。
 
@@ -167,7 +173,7 @@ def call_deepseek(prompt: str, cfg: dict, api_key: str, metadata: dict | None = 
             content = data["choices"][0]["message"]["content"]
             if not content or not content.strip():
                 raise ValueError("空のcontentが返りました（JSONモードの失敗）")
-            return json.loads(content)
+            return json.loads(strip_code_fence(content))
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             last_err = e
             print(f"[warn] attempt {attempt + 1} 失敗: {e}", file=sys.stderr)
