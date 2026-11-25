@@ -3,6 +3,6 @@
   "private": true,
   "description": "動画パイプライン（build_pptx.py）で図を描くための mermaid-cli。サイトのビルドとは別に管理する。",
   "dependencies": {
-    "@mermaid-js/mermaid-cli": "11.16.0"
+    "@mermaid-js/mermaid-cli": "11.17.1"
   }
 }
