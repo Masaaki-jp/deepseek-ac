@@ -28,7 +28,7 @@ def _env_float(name: str, default: float) -> float:
     except ValueError:
         return default
 
-MAX_TOKENS = _env_int("DEEPSEEK_MAX_TOKENS", 8000)
+MAX_TOKENS = _env_int("DEEPSEEK_MAX_TOKENS", 16000)
 DAILY_LIMIT_USD = _env_float("DEEPSEEK_DAILY_LIMIT_USD", 1.0)
 HOURLY_LIMIT_USD = _env_float("DEEPSEEK_HOURLY_LIMIT_USD", 0.20)
 SPEED_ALERT_RATIO = _env_float("DEEPSEEK_SPEED_ALERT_RATIO", 3.0)
