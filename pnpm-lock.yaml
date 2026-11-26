@@ -186,7 +186,7 @@ importers:
   .:
     dependencies:
       astro:
-        specifier: ^7.4.4
+        specifier: 7.4.13
         version: 7.4.13(@types/node@26.5.1)(esbuild@0.27.7)(idb-keyval@6.3.0)(yaml@2.9.1)
       gray-matter:
         specifier: ^4.0.3
